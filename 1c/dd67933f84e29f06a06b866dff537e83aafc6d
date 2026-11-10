@@ -1,0 +1,140 @@
+.env.example
+  h_0615fc48a2f10f 1-27
+.gitattributes
+  h_0615fc48a2f10f 1-2
+.gitignore
+  h_0615fc48a2f10f 1-195
+.vscode/settings.json
+  h_0615fc48a2f10f 1-7
+01_kyc_agent/README.md
+  h_0615fc48a2f10f 1-118
+01_kyc_agent/agent.py
+  h_0615fc48a2f10f 1-32
+01_kyc_agent/data/applications.jsonl
+  h_0615fc48a2f10f 1-25
+01_kyc_agent/data/pep_list.jsonl
+  h_0615fc48a2f10f 1-6
+01_kyc_agent/data/sanctions_list.jsonl
+  h_0615fc48a2f10f 1-8
+01_kyc_agent/langgraph.json
+  h_0615fc48a2f10f 1-8
+01_kyc_agent/modules/01_kyc_agent.ipynb
+  h_0615fc48a2f10f 1-722
+01_kyc_agent/pyproject.toml
+  h_0615fc48a2f10f 1-15
+01_kyc_agent/tools/applications.py
+  h_0615fc48a2f10f 1-11
+01_kyc_agent/tools/screening.py
+  h_0615fc48a2f10f 1-50
+01_kyc_agent/utils/__init__.py
+  h_0615fc48a2f10f 1-3
+01_kyc_agent/utils/db.py
+  h_0615fc48a2f10f 1-29
+01_kyc_agent/utils/models.py
+  h_0615fc48a2f10f 1-17
+01_kyc_agent/utils/nodes.py
+  h_0615fc48a2f10f 1-137
+01_kyc_agent/utils/state.py
+  h_0615fc48a2f10f 1-35
+02_transaction_monitoring_agent/README.md
+  h_0615fc48a2f10f 1-186
+02_transaction_monitoring_agent/agent.py
+  h_0615fc48a2f10f 1-30
+02_transaction_monitoring_agent/data/analyst_labels.jsonl
+  h_0615fc48a2f10f 1-11
+02_transaction_monitoring_agent/data/customer_profiles.jsonl
+  h_0615fc48a2f10f 1-2
+02_transaction_monitoring_agent/data/reviewer_answers.jsonl
+  h_0615fc48a2f10f 1-2
+02_transaction_monitoring_agent/data/simulated_annotations.jsonl
+  h_0615fc48a2f10f 1-4
+02_transaction_monitoring_agent/data/transactions.jsonl
+  h_0615fc48a2f10f 1-15
+02_transaction_monitoring_agent/evals/scoring_evals.py
+  h_0615fc48a2f10f 1-34
+02_transaction_monitoring_agent/instructions.md
+  h_0615fc48a2f10f 1-17
+02_transaction_monitoring_agent/langgraph.json
+  h_0615fc48a2f10f 1-8
+02_transaction_monitoring_agent/modules/01_transaction_monitoring_agent.ipynb
+  h_0615fc48a2f10f 1-694
+02_transaction_monitoring_agent/modules/02_scoring_evals.ipynb
+  h_0615fc48a2f10f 1-332
+02_transaction_monitoring_agent/modules/03_annotation_queue.ipynb
+  h_0615fc48a2f10f 1-448
+02_transaction_monitoring_agent/pyproject.toml
+  h_0615fc48a2f10f 1-17
+02_transaction_monitoring_agent/scripts/run_experiments.py
+  h_0615fc48a2f10f 1-84
+02_transaction_monitoring_agent/tools/customers.py
+  h_0615fc48a2f10f 1-17
+02_transaction_monitoring_agent/tools/decisions.py
+  h_0615fc48a2f10f 1-101
+02_transaction_monitoring_agent/tools/transactions.py
+  h_0615fc48a2f10f 1-18
+02_transaction_monitoring_agent/utils/__init__.py
+  h_0615fc48a2f10f 1-3
+02_transaction_monitoring_agent/utils/attendee.py
+  h_0615fc48a2f10f 1-18
+02_transaction_monitoring_agent/utils/db.py
+  h_0615fc48a2f10f 1-26
+02_transaction_monitoring_agent/utils/models.py
+  h_0615fc48a2f10f 1-17
+02_transaction_monitoring_agent/utils/state.py
+  h_0615fc48a2f10f 1-12
+02_transaction_monitoring_agent/utils/transaction_processing.py
+  h_0615fc48a2f10f 1-46
+03_document_summary_agent/README.md
+  h_0615fc48a2f10f 1-148
+03_document_summary_agent/agent.py
+  h_0615fc48a2f10f 1-34
+03_document_summary_agent/data/documents.jsonl
+  h_0615fc48a2f10f 1
+03_document_summary_agent/data/documents/PS26-4.md
+  h_0615fc48a2f10f 1-119
+03_document_summary_agent/data/firms.jsonl
+  h_0615fc48a2f10f 1
+03_document_summary_agent/data/third_party_providers.jsonl
+  h_0615fc48a2f10f 1-2
+03_document_summary_agent/instructions.md
+  h_0615fc48a2f10f 1-16
+03_document_summary_agent/langgraph.json
+  h_0615fc48a2f10f 1-8
+03_document_summary_agent/modules/01_document_summary_agent.ipynb
+  h_0615fc48a2f10f 1-372
+03_document_summary_agent/pyproject.toml
+  h_0615fc48a2f10f 1-17
+03_document_summary_agent/sub_agent.py
+  h_0615fc48a2f10f 1-40
+03_document_summary_agent/sub_agent_instructions.md
+  h_0615fc48a2f10f 1-51
+03_document_summary_agent/tools/documents.py
+  h_0615fc48a2f10f 1-54
+03_document_summary_agent/tools/firms.py
+  h_0615fc48a2f10f 1-44
+03_document_summary_agent/tools/third_party_providers.py
+  h_0615fc48a2f10f 1-18
+03_document_summary_agent/utils/__init__.py
+  h_0615fc48a2f10f 1-3
+03_document_summary_agent/utils/db.py
+  h_0615fc48a2f10f 1-29
+03_document_summary_agent/utils/models.py
+  h_0615fc48a2f10f 1-17
+README.md
+  h_0615fc48a2f10f 1-54
+pyproject.toml
+  h_0615fc48a2f10f 1-11
+uv.lock
+  h_0615fc48a2f10f 1-4169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1cdd67933f84e29f06a06b866dff537e83aafc6d",
+  "prompts": {},
+  "humans": {
+    "h_0615fc48a2f10f": {
+      "author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  }
+}
