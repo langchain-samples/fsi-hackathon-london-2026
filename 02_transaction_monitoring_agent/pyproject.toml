@@ -1,0 +1,17 @@
+[project]
+name = "transaction-monitoring-workshop"
+version = "0.1.0"
+description = "Hands-on LangChain workshop: a transaction-monitoring agent with memory, human review and evals"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain>=1.0,<2",
+    "langgraph>=1.0,<2",
+    "langchain-openai>=1.0,<2",
+    "langsmith>=0.4,<1",
+    "python-dotenv>=1.0,<2",
+    "langgraph-cli[inmem]>=0.4,<1",
+    "notebook>=7,<8",
+    "managed-deepagents>=0.9,<1",
+    "langchain-anthropic>=1.0,<2",
+]

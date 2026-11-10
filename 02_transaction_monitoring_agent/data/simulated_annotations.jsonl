@@ -1,0 +1,4 @@
+{"transaction_id": "TX-1007", "correct_risk_score": 5, "comment": "Routine grocery shop at a usual merchant."}
+{"transaction_id": "TX-1008", "correct_risk_score": 15, "comment": "Annual streaming plan. Higher than usual, but a usual category."}
+{"transaction_id": "TX-1009", "correct_risk_score": 75, "comment": "Late-night luxury purchase online, far above the usual spend. Customer later reported it as fraud."}
+{"transaction_id": "TX-1010", "correct_risk_score": 5, "comment": "Regular commute."}

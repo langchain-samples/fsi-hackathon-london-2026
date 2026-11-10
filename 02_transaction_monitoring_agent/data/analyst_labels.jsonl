@@ -1,0 +1,11 @@
+{"transaction_id": "TX-1001", "decision": "approve", "risk_score": 5, "ambiguous": false}
+{"transaction_id": "TX-1002", "decision": "approve", "risk_score": 5, "ambiguous": false}
+{"transaction_id": "TX-1003", "decision": "approve", "risk_score": 45, "ambiguous": true}
+{"transaction_id": "TX-1004", "decision": "approve", "risk_score": 15, "ambiguous": false}
+{"transaction_id": "TX-1005", "decision": "block", "risk_score": 90, "ambiguous": false}
+{"transaction_id": "TX-1006", "decision": "block", "risk_score": 95, "ambiguous": false}
+{"transaction_id": "TX-2001", "decision": "approve", "risk_score": 5, "ambiguous": false}
+{"transaction_id": "TX-2002", "decision": "approve", "risk_score": 10, "ambiguous": false}
+{"transaction_id": "TX-2003", "decision": "approve", "risk_score": 5, "ambiguous": false}
+{"transaction_id": "TX-2004", "decision": "block", "risk_score": 95, "ambiguous": false}
+{"transaction_id": "TX-2005", "decision": "approve", "risk_score": 50, "ambiguous": true}

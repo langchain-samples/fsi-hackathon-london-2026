@@ -1,0 +1,2 @@
+{"user_id": "USR-001", "name": "Priya Shah", "home_country": "GB", "city": "London", "currency": "GBP", "usual_amount_range": [10, 150], "usual_categories": ["groceries", "transport", "restaurants", "streaming"], "customer_since": 2020}
+{"user_id": "USR-002", "name": "Tomás Ferreira", "home_country": "PT", "city": "Lisbon", "currency": "EUR", "usual_amount_range": [5, 400], "usual_categories": ["software", "electronics", "cafes", "coworking"], "customer_since": 2024}
