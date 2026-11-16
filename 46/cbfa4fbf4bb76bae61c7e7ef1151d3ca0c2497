@@ -1,0 +1,18 @@
+01_kyc_agent/modules/01_kyc_agent.ipynb
+  h_0615fc48a2f10f 685
+02_transaction_monitoring_agent/modules/01_transaction_monitoring_agent.ipynb
+  h_0615fc48a2f10f 659-661,663-664,666-667,669
+03_document_summary_agent/modules/01_document_summary_agent.ipynb
+  h_0615fc48a2f10f 341-343,345-346,348-350
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46cbfa4fbf4bb76bae61c7e7ef1151d3ca0c2497",
+  "prompts": {},
+  "humans": {
+    "h_0615fc48a2f10f": {
+      "author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  }
+}
