@@ -1,0 +1,29 @@
+01_kyc_agent/scripts/create_offline_evals.py
+  h_0615fc48a2f10f 1-204
+  h_0615fc48a2f10f 205-226
+uv.lock
+  s_dba9f63564f45b::t_c8cb85ccdc20fb 14,675-703
+.vscode/launch.json
+  h_0615fc48a2f10f 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66d2970b34527896a51983c5c975aa40b3182bfb",
+  "prompts": {},
+  "humans": {
+    "h_0615fc48a2f10f": {
+      "author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_dba9f63564f45b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aeda7573-1ea0-4d8a-a909-80a6547ef838",
+        "model": "unknown"
+      },
+      "human_author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  }
+}
