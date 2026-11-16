@@ -1,0 +1,24 @@
+01_kyc_agent/scripts/create_offline_evals.py
+  s_87ce3e97d51d98::t_fb8116e3e2be47 7-11,41-42,111-114,128-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8a1706dec58c0323da28d253b2a35208f003b036",
+  "prompts": {},
+  "humans": {
+    "h_0615fc48a2f10f": {
+      "author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_87ce3e97d51d98": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "850cac2e-f727-4082-bb51-1057de6ae0e0",
+        "model": "unknown"
+      },
+      "human_author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  }
+}
