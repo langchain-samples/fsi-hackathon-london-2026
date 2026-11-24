@@ -1,0 +1,28 @@
+01_kyc_agent/pyproject.toml
+  h_0615fc48a2f10f 12
+01_kyc_agent/utils/nodes.py
+  s_3c7a376b05e9a3::t_dad37e685224cd 1-2,107-112
+uv.lock
+  h_0615fc48a2f10f 804,809-860,1581,1593,1709,1728,1734,1750,1752,1805,1816,1818,2042-2079,2752-2756,2787-2817
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "12acee09ca8d246ad9b88f0922cae6bdabb72308",
+  "prompts": {},
+  "humans": {
+    "h_0615fc48a2f10f": {
+      "author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_3c7a376b05e9a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6a6ca51a-e3db-40d5-ba17-2b9f98dbb753",
+        "model": "unknown"
+      },
+      "human_author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  }
+}
