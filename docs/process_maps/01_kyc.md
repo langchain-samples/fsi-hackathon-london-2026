@@ -15,6 +15,9 @@
 | **Writes to shared memory** | The customer's rating and reasons |
 | **Asks a human when** | The customer is high risk |
 
+
+**Contract check:** `uv run pytest -q 00_control_tower/tests/test_contracts.py`. Reasons can be plain strings or `{level, text, paragraph}`, and `medium` is accepted. To read the live policy in a node, take `runtime` and call `control_tower.contracts.read_policy(runtime.store)`.
+
 ## Steps today
 
 | Step | What happens | Tool or data |

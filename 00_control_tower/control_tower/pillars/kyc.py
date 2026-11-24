@@ -16,6 +16,7 @@ from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
 
 from control_tower import memory
+from control_tower.contracts import KycOutput, kyc_reasons
 from control_tower.loader import load_project
 from control_tower.policy import PolicyParams
 from control_tower.settings import MODEL, to_gbp
@@ -23,14 +24,15 @@ from control_tower.settings import MODEL, to_gbp
 FOLDER = "01_kyc_agent"
 _ORDER = {"low": 0, "medium": 1, "high": 2}
 _saver = InMemorySaver()
-_graph = None
+_graphs: dict[int, object] = {}
 
 
-def graph():
-    global _graph
-    if _graph is None:
-        _graph = load_project(FOLDER)["agent"].build_agent(checkpointer=_saver)
-    return _graph
+def graph(store: BaseStore | None = None):
+    """Nam's 01 graph, compiled with the shared store so its nodes can read the live policy if they want to."""
+    store = store or memory.get_store()
+    if id(store) not in _graphs:
+        _graphs[id(store)] = load_project(FOLDER)["agent"].build_agent(checkpointer=_saver, store=store)
+    return _graphs[id(store)]
 
 
 class ConnectedPerson(BaseModel):
@@ -98,28 +100,27 @@ def run_kyc(customer_id: str, store: BaseStore, policy: PolicyParams, model: str
     config = {"configurable": {"thread_id": thread_id}}
     memory.log_event(store, "kyc", f"Screening {customer_id}", {"policy": policy.source_document})
 
-    result = graph().invoke({"customer_id": customer_id}, config)
-    state = graph().get_state(config).values
+    result = graph(store).invoke({"customer_id": customer_id}, config)
+    state = KycOutput(**graph(store).get_state(config).values)  # fails loudly if 01's output shape breaks
     paused = "__interrupt__" in result
 
-    reasons = [{"level": state.get("risk_level", "low"), "text": r, "paragraph": ""}
-               for r in state.get("risk_reasons", []) if r != "No watchlist matches"]
-    facts = facts_extractor(state["application"], model) if _needs_facts(policy) else None
-    reasons += policy_overlay(state["profile"], facts, policy, project["tools.screening"].check_pep)
+    reasons = kyc_reasons(state)
+    facts = facts_extractor(state.application, model) if _needs_facts(policy) else None
+    reasons += policy_overlay(state.profile.model_dump(), facts, policy, project["tools.screening"].check_pep)
 
-    rating = max([state.get("risk_level", "low"), *(r["level"] for r in reasons)], key=lambda l: _ORDER.get(l, 0))
+    rating = max([state.risk_level, *(r["level"] for r in reasons)], key=lambda l: _ORDER.get(l, 0))
     previous = memory.get_customer_risk(store, customer_id)
     record = {
         "customer_id": customer_id,
-        "name": state["profile"]["full_name"],
+        "name": state.profile.full_name,
         "user_id": memory.user_for_customer(customer_id),
         "rating": rating,
         "reasons": reasons or [{"level": "low", "text": "No watchlist matches and no policy triggers",
                                 "paragraph": ""}],
         "policy": policy.source_document,
         "kyc_thread": thread_id,
-        "decision": state.get("decision"),
-        "status": "approved" if state.get("decision") == "approve" else "pending_review",
+        "decision": state.decision,
+        "status": "approved" if state.decision == "approve" else "pending_review",
         # Keep the last *different* rating, so the portal can show "was LOW under baseline".
         "previous": (previous.get("previous") if previous and previous["rating"] == rating
                      else {"rating": previous["rating"], "policy": previous["policy"]} if previous else None),
@@ -150,8 +151,8 @@ def resume_kyc(store: BaseStore, case: dict, answer: dict) -> dict:
     record = memory.get_customer_risk(store, customer_id) or {}
     if case["resume"]["kind"] == "graph":
         config = {"configurable": {"thread_id": case["resume"]["thread_id"]}}
-        graph().invoke(Command(resume=answer), config)
-        state = graph().get_state(config).values
+        graph(store).invoke(Command(resume=answer), config)
+        state = graph(store).get_state(config).values
         record.update(decision=state.get("decision"), memo=state.get("decision_memo"))
     else:
         record.update(decision=answer["decision"])

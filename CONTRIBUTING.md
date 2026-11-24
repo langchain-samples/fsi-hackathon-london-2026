@@ -44,6 +44,12 @@ git commit -m "KYC: add medium rating and EDD rules"
 git push -u origin nam/kyc-ratings
 ```
 
+Before you open a pull request, check your agent still plugs into the supervisor:
+
+```bash
+uv run pytest -q 00_control_tower/tests/test_contracts.py
+```
+
 Then open a **pull request** (PR) on GitHub from your branch into `main`, and post the link in the team chat.
 Someone else gives it a quick look and merges it.
 

@@ -15,6 +15,9 @@
 | **Writes to shared memory** | Through the supervisor: the control changes the brief implies (after a human approves them) |
 | **Asks a human when** | Applicability is unclear; and to approve or correct each brief |
 
+
+**Contract check:** `uv run pytest -q 00_control_tower/tests/test_contracts.py`. The supervisor sends `Summarise document <ID> for <FIRM-ID>` and reads the final message as the brief. If you add a `response_format` (e.g. the Sections A–E brief), the structured response is used instead.
+
 ## Rules the build must respect (from Alejandro's map)
 
 - Scope decides everything: check scope first; an out-of-scope firm gets a one-line "does not apply" brief.

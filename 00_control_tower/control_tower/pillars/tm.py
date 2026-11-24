@@ -16,6 +16,7 @@ from langgraph.store.base import BaseStore
 from langgraph.types import Command
 
 from control_tower import memory
+from control_tower.contracts import TmDecision
 from control_tower.loader import load_project
 from control_tower.policy import PolicyParams
 from control_tower.settings import to_gbp
@@ -68,7 +69,8 @@ def _after_decision(store: BaseStore, tx: dict, policy: PolicyParams) -> dict:
     """Read the 02 agent's decision back, apply the merchant rule, record alerts and the refresh trigger."""
     user_id = tx["user_id"]
     item = store.get(("decisions", user_id), tx["transaction_id"])
-    decision = item.value if item else {"transaction_id": tx["transaction_id"], "final_decision": "unknown"}
+    decision = TmDecision(**item.value).model_dump() if item else {"transaction_id": tx["transaction_id"],
+                                                                   "final_decision": "unknown"}
 
     hold = merchant_hold(tx, policy) if decision.get("final_decision") == "approve" \
         and decision.get("decided_by") == "agent" else None

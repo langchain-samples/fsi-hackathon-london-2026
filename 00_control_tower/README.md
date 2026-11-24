@@ -12,7 +12,9 @@ Supervisor deep agent: regulatory-analyst sub-agent + tools for KYC, TM, refresh
 ```
 
 The pillars never call each other. Each one still runs on its own from its own folder, so Nam, Marcus and
-Alejandro can change their projects freely. The adapters in `control_tower/pillars/` only rely on:
+Alejandro can change their projects freely. `control_tower/contracts.py` defines what the supervisor needs from each
+one, and `tests/test_contracts.py` checks it: pillar owners run
+`uv run pytest -q 00_control_tower/tests/test_contracts.py` before opening a pull request. In short:
 
 | Pillar | What the adapter needs from it |
 |--------|--------------------------------|
@@ -34,6 +36,7 @@ LangChain asks for a Jupyter notebook and an `agents.py` in a forked repo:
 From the repo root, once: `uv sync --all-packages` and fill in `.env`. Then from this folder:
 
 ```bash
+uv run python -m control_tower.doctor          # checks .env, LangSmith login and one model call
 uv run uvicorn portal.app:app --port 8000      # the demo portal: http://localhost:8000
 uv run python scenario.py                      # the same story in the terminal
 uv run langgraph dev                           # the supervisor in LangGraph Studio

@@ -1,16 +1,10 @@
 """Offline tests for the control tower wiring. Run from 00_control_tower: `uv run pytest -q`."""
-import os
-
-os.environ.setdefault("OPENAI_API_KEY", "offline")
-os.environ["LANGSMITH_TRACING"] = "false"
-
 from control_tower import memory, offline  # noqa: E402
 from control_tower.loader import load_project  # noqa: E402
 from control_tower.pillars import kyc, tm  # noqa: E402
 from control_tower.policy import BASELINE, PS26_7_REFERENCE, diff  # noqa: E402
 from control_tower.pillars.kyc import ConnectedPerson, StatedFacts, policy_overlay  # noqa: E402
 
-offline.enable()
 
 
 def test_projects_load_side_by_side():

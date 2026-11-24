@@ -11,6 +11,7 @@ from __future__ import annotations
 from langgraph.store.base import BaseStore
 
 from control_tower import memory
+from control_tower.contracts import brief_from_result, reg_request
 from control_tower.loader import load_project
 from control_tower.policy import BASELINE, PolicyParams, diff, extract_policy
 from control_tower.settings import MODEL
@@ -36,9 +37,8 @@ def run_reg(document_id: str, firm_id: str, store: BaseStore, model: str = MODEL
             extractor=extract_policy) -> dict:
     """Brief the document for the firm with the 03 agent, then propose the policy it implies."""
     memory.log_event(store, "reg", f"Briefing {document_id} for {firm_id}")
-    result = reg_agent().invoke(
-        {"messages": [{"role": "user", "content": f"Summarise document {document_id} for {firm_id}"}]})
-    brief = result["messages"][-1].text
+    result = reg_agent().invoke(reg_request(document_id, firm_id))
+    brief = brief_from_result(result)
     memory.log_event(store, "reg", f"Brief ready for {document_id}", {"brief": brief})
     return publish_policy_from_brief(document_id, brief, firm_id, store, model, auto_approve, extractor)
 

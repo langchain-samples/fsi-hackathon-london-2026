@@ -15,6 +15,9 @@
 | **Writes to shared memory** | Every decision; alerts (blocks and human referrals); a KYC-refresh flag when alerts pile up |
 | **Asks a human when** | Confidence is below the threshold, the score is in the grey zone, or a large payment is made abroad |
 
+
+**Contract check:** `uv run pytest -q 00_control_tower/tests/test_contracts.py`. Keep `confidence_threshold` and `grey_zone` on `MyAgentContext`, and keep writing decisions with `transaction_id`, `risk_score`, `confidence`, `final_decision`, `decided_by` and `reason`. Read the live policy in a tool with `control_tower.contracts.read_policy(runtime.store)`.
+
 ## Steps today
 
 | Step | What happens | Tool or data |
