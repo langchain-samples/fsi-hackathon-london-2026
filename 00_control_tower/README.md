@@ -20,6 +20,15 @@ Alejandro can change their projects freely. The adapters in `control_tower/pilla
 | 02 TM | `build_agent(**kwargs)`; `utils.state.MyAgentContext`; decisions in the `("decisions", user_id)` store namespace |
 | 03 Reg | `build_agent(**kwargs)`; the final message is the brief (any format) |
 
+## Submission
+
+LangChain asks for a Jupyter notebook and an `agents.py` in a forked repo:
+
+- [`control_tower.ipynb`](control_tower.ipynb): the whole story, step by step, with outputs. Set
+  `CONTROL_TOWER_OFFLINE=1` to run it without an API key.
+- [`agents.py`](agents.py): exports `supervisor`, `kyc_agent`, `transaction_agent` and `regulatory_agent`.
+  `langgraph.json` serves `supervisor` in Studio.
+
 ## Run it
 
 From the repo root, once: `uv sync --all-packages` and fill in `.env`. Then from this folder:

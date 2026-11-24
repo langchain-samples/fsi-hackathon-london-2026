@@ -1,3 +1,22 @@
+# MillTech: FinCrime Control Tower
+
+Our team's fork of LangChain's FSI hackathon repo (London, 25 November 2026). We build all three starter projects and
+join them with a supervisor deep agent and one shared memory: **a new regulation lands, the system turns it into policy,
+KYC and monitoring behaviour changes, evals prove it, and a human signs off where it matters.**
+
+| Folder | What | Owner |
+|--------|------|-------|
+| [`00_control_tower`](00_control_tower/README.md) | Supervisor deep agent, shared memory, demo portal, evals. **Submission: [`control_tower.ipynb`](00_control_tower/control_tower.ipynb) + [`agents.py`](00_control_tower/agents.py)** | Lukman |
+| [`01_kyc_agent`](01_kyc_agent/README.md) | KYC onboarding (LangGraph) | Nam |
+| [`02_transaction_monitoring_agent`](02_transaction_monitoring_agent/README.md) | Transaction monitoring (agent with memory and human review) | Marcus |
+| [`03_document_summary_agent`](03_document_summary_agent/README.md) | Regulatory change / compliance brief (deep agent with sub-agents) | Alejandro |
+
+Start here: [game plan](docs/GAME_PLAN.md) · [how we work (setup, branches, PRs)](CONTRIBUTING.md) ·
+[process maps](docs/process_maps/README.md). All data is synthetic; outputs are drafts for a human reviewer, not
+compliance advice.
+
+---
+
 # FSI Hackathon Workshops
 
 Hands-on notebooks, with mirrored `.py` files, for building financial-services agents with LangChain, LangGraph

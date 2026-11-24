@@ -1,7 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "control_tower": "./control_tower/supervisor.py:agent"
+    "control_tower": "./agents.py:supervisor"
   },
   "env": "../.env",
   "python_version": "3.13"

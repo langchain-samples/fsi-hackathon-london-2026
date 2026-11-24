@@ -1,5 +1,7 @@
 # Process maps
 
+See also the [game plan](../GAME_PLAN.md).
+
 One page per agent: what goes in, what comes out, which tools it uses, and what it shares. The supervisor agent
 (00) is built against these pages, so it can combine the three agents without knowing how each one works inside.
 
