@@ -1,0 +1,14 @@
+00_dcode_setup/README.md
+  h_0615fc48a2f10f 21-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b562644313c23fa0ff98abbf9e6e015360fb788",
+  "prompts": {},
+  "humans": {
+    "h_0615fc48a2f10f": {
+      "author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  }
+}
