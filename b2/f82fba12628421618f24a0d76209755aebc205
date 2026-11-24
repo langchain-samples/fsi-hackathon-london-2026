@@ -1,0 +1,38 @@
+.gitignore
+  h_0615fc48a2f10f 133
+00_dcode_setup/.env.example
+  s_b47abc6f7126ec::t_624a755d163363 1-21
+00_dcode_setup/README.md
+  s_8c2349ce354507::t_764432986885e3 1-73
+README.md
+  s_8c2349ce354507::t_7df13fe8494e23 8,37-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b2f82fba12628421618f24a0d76209755aebc205",
+  "prompts": {},
+  "humans": {
+    "h_0615fc48a2f10f": {
+      "author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_8c2349ce354507": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7e34f563-2ea6-4eb9-afdb-26a6613e665c",
+        "model": "unknown"
+      },
+      "human_author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    },
+    "s_b47abc6f7126ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16328075-b60d-4682-8ef9-361b03a01e08",
+        "model": "unknown"
+      },
+      "human_author": "Avtar <118772076+avtarraikmo@users.noreply.github.com>"
+    }
+  }
+}
