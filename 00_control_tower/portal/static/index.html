@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinCrime Control Tower</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #151b23; --panel2: #1b222c; --line: #2a3340; --ink: #e6edf3; --quiet: #8b98a8;
+    --reg: #a78bfa; --kyc: #38bdf8; --tm: #f59e0b; --good: #34d399; --warn: #fbbf24; --bad: #f87171; --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  header .sub { color: var(--quiet); font-size: 13px; }
+  .badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--quiet); }
+  .badge.offline { color: var(--warn); border-color: var(--warn); }
+  .badge.live { color: var(--good); border-color: var(--good); }
+  .spacer { flex: 1; }
+  main { display: grid; grid-template-columns: 250px 1fr 360px; gap: 16px; padding: 16px 24px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--quiet); margin: 0 0 10px; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .step { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; background: var(--panel2); color: var(--ink);
+          border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 8px; cursor: pointer; font: inherit; }
+  .step:hover { border-color: var(--accent); }
+  .step:disabled { opacity: .5; cursor: wait; }
+  .step .n { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--line); }
+  .step.done .n { background: var(--good); color: #062; }
+  .step small { display: block; color: var(--quiet); font-size: 12px; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; margin-right: 4px; }
+  .p-reg { background: #a78bfa22; color: var(--reg); } .p-kyc { background: #38bdf822; color: var(--kyc); } .p-tm { background: #f59e0b22; color: var(--tm); }
+  .para { font-size: 11px; color: var(--accent); border: 1px solid #60a5fa55; border-radius: 4px; padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+  .cust { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .cust-head { display: flex; align-items: center; gap: 12px; }
+  .cust-head .name { font-size: 17px; font-weight: 600; }
+  .rating { font-weight: 800; font-size: 13px; padding: 4px 10px; border-radius: 6px; letter-spacing: .6px; transition: all .4s; }
+  .r-low { background: #34d39922; color: var(--good); } .r-medium { background: #fbbf2422; color: var(--warn); }
+  .r-high { background: #f8717122; color: var(--bad); box-shadow: 0 0 0 1px var(--bad) inset; } .r-none { background: var(--line); color: var(--quiet); }
+  .reasons { margin: 6px 0 0; padding-left: 18px; color: var(--ink); }
+  .reasons li { margin: 2px 0; }
+  .meta { color: var(--quiet); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--quiet); font-weight: 500; font-size: 12px; padding: 6px 6px; border-bottom: 1px solid var(--line); }
+  td { padding: 6px; border-bottom: 1px solid #222a35; vertical-align: top; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .d-approve { color: var(--good); font-weight: 600; } .d-block { color: var(--bad); font-weight: 600; } .d-pending { color: var(--warn); font-weight: 600; }
+  .by { color: var(--quiet); font-size: 11px; }
+  .alert-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-left: 6px; }
+  .flag { background: #f8717118; border: 1px solid var(--bad); color: var(--bad); padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .changes td:first-child { color: var(--quiet); }
+  .after { color: var(--accent); font-weight: 600; }
+  .review { background: var(--panel2); border: 1px solid var(--warn); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+  .review .q { font-weight: 600; margin: 4px 0 6px; }
+  .review ul { margin: 0 0 8px; padding-left: 18px; color: var(--quiet); font-size: 12px; }
+  .review input { width: 100%; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; font: inherit; }
+  .btns { display: flex; gap: 8px; }
+  .btn { flex: 1; border: 0; border-radius: 6px; padding: 7px; font-weight: 600; cursor: pointer; font: inherit; font-weight: 600; }
+  .btn.ok { background: var(--good); color: #052e1c; } .btn.no { background: var(--bad); color: #3b0909; }
+  .feed { max-height: 360px; overflow: auto; font-size: 12.5px; }
+  .ev { padding: 6px 0; border-bottom: 1px solid #222a35; }
+  .ev .t { color: var(--quiet); font-size: 11px; }
+  .empty { color: var(--quiet); font-size: 13px; }
+  .status { font-size: 12px; color: var(--warn); }
+  .err { color: var(--bad); font-size: 12px; }
+  a { color: var(--accent); }
+  .ghost { background: none; border: 1px solid var(--line); color: var(--quiet); border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; }
+  .thresholds { display: flex; gap: 12px; flex-wrap: wrap; }
+  .th { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  .th b { font-size: 15px; } .th.changed { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>FinCrime Control Tower</h1>
+  <span class="sub">KYC, transaction monitoring and regulatory change: one supervisor, one memory</span>
+  <span id="mode" class="badge">…</span>
+  <span class="spacer"></span>
+  <span id="status" class="status"></span>
+  <a id="ls" href="https://smith.langchain.com" target="_blank" rel="noopener">Open LangSmith</a>
+  <button class="ghost" onclick="reset()">Reset</button>
+</header>
+<main>
+  <div class="col">
+    <div class="panel">
+      <h2>The story</h2>
+      <button class="step" data-step="onboard"><span class="n">1</span><span>Onboard customers <small><span class="pill p-kyc">KYC</span>today's rules</small></span></button>
+      <button class="step" data-step="monitor"><span class="n">2</span><span>Monitor card payments <small><span class="pill p-tm">TM</span>thresholds from KYC rating</small></span></button>
+      <button class="step" data-step="regulation"><span class="n">3</span><span>PS26-7 lands <small><span class="pill p-reg">REG</span>brief, then propose controls</small></span></button>
+      <button class="step" data-step="onboard" data-label="rescreen"><span class="n">4</span><span>Re-screen under PS26-7 <small><span class="pill p-kyc">KYC</span>close associates, EDD</small></span></button>
+      <button class="step" data-step="monitor" data-label="remonitor"><span class="n">5</span><span>Monitor under PS26-7 <small><span class="pill p-tm">TM</span>stricter for high risk</small></span></button>
+      <button class="step" data-step="refresh"><span class="n">6</span><span>Process KYC refresh <small><span class="pill p-kyc">KYC</span>alerts re-open the file</small></span></button>
+      <div id="err" class="err"></div>
+    </div>
+    <div class="panel">
+      <h2>Live policy</h2>
+      <div id="policy" class="empty">Baseline: the repo's default controls.</div>
+    </div>
+  </div>
+
+  <div class="col" id="customers"></div>
+
+  <div class="col">
+    <div class="panel">
+      <h2>Review inbox</h2>
+      <div id="reviews" class="empty">Nothing waiting for a human.</div>
+    </div>
+    <div class="panel">
+      <h2>Activity</h2>
+      <div id="feed" class="feed"></div>
+    </div>
+  </div>
+</main>
+<script>
+let lastSeq = 0, done = new Set(), state = null;
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const para = p => p ? `<span class="para">¶ ${esc(p)}</span>` : "";
+const fieldNames = {
+  edd_for_pep_family_and_associates: "EDD for PEP family and close associates",
+  high_risk_countries: "High-risk third countries",
+  source_of_funds_threshold_gbp: "Source-of-funds evidence above (£)",
+  high_risk_confidence_threshold: "High-risk: human below confidence",
+  high_risk_review_score: "High-risk: human at risk score ≥",
+  high_risk_merchant_categories: "High-risk merchant categories",
+  high_risk_merchant_limit_gbp: "High-risk merchant limit (£)",
+  alerts_for_kyc_refresh: "Alerts that trigger KYC refresh",
+  alert_window_days: "Alert window (days)", edd_for_peps: "EDD for PEPs",
+};
+const fmt = v => typeof v === "number" ? v.toLocaleString() : Array.isArray(v) ? (v.length ? v.join(", ") : "none") : (v === null ? "none" : v === true ? "yes" : v === false ? "no" : v);
+
+document.querySelectorAll(".step").forEach(b => b.onclick = async () => {
+  const r = await fetch(`/api/step/${b.dataset.step}`, {method: "POST"});
+  if (!r.ok) { $("#err").textContent = (await r.json()).detail; return; }
+  done.add(b.dataset.label || b.dataset.step); b.classList.add("done"); poll();
+});
+
+async function reset() {
+  await fetch("/api/reset", {method: "POST"});
+  lastSeq = 0; done.clear(); $("#feed").innerHTML = "";
+  document.querySelectorAll(".step").forEach(b => b.classList.remove("done"));
+  poll();
+}
+
+async function answer(caseId, decision) {
+  const note = document.getElementById("note-" + caseId)?.value || "";
+  await fetch(`/api/review/${encodeURIComponent(caseId)}`, {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({decision, note})});
+  poll();
+}
+
+function renderCustomer(c) {
+  const risk = c.risk, rating = risk ? risk.rating : null;
+  const reasons = risk ? risk.reasons.map(r => `<li>${esc(r.text)}${para(r.paragraph)}</li>`).join("") : "";
+  const changed = c.thresholds.confidence !== 0.7;
+  const rows = c.transactions.map(t => {
+    const d = t.decision, alert = c.alerts.some(a => a.transaction_id === t.transaction_id);
+    const pending = state.reviews.some(r => r.case_id.endsWith(t.transaction_id));
+    const dec = d ? `<span class="d-${esc(d.final_decision)}">${esc(d.final_decision)}</span> <span class="by">${esc(d.decided_by)}${d.risk_score !== undefined ? " · score " + esc(d.risk_score) : ""}</span>`
+                  : pending ? `<span class="d-pending">with reviewer</span>` : `<span class="by">not scored</span>`;
+    return `<tr><td>${esc(t.transaction_id)}</td><td>${esc(t.timestamp.replace("T", " "))}</td><td>${esc(t.merchant)} <span class="by">${esc(t.category)}, ${esc(t.country)}</span></td>
+      <td class="num">${Number(t.amount).toLocaleString()} ${esc(t.currency)}</td><td>${dec}${alert ? '<span class="alert-dot" title="alert"></span>' : ""}</td></tr>`;
+  }).join("");
+  return `<div class="panel cust">
+    <div class="cust-head"><span class="name">${esc(risk?.name || c.customer_id)}</span>
+      <span class="meta">${esc(c.customer_id)} · card ${esc(c.user_id)}</span><span class="spacer"></span>
+      ${risk?.previous && risk.previous.rating !== rating ? `<span class="meta">was <b>${esc(risk.previous.rating.toUpperCase())}</b> under ${esc(risk.previous.policy)} →</span>` : ""}
+      <span class="rating r-${rating || "none"}">${rating ? rating.toUpperCase() : "NOT RATED"}</span></div>
+    ${risk ? `<div class="meta">Rated under <b>${esc(risk.policy)}</b> · ${esc(risk.status.replace("_", " "))}</div><ul class="reasons">${reasons}</ul>` : ""}
+    ${c.refresh ? `<div class="flag">KYC refresh triggered by transaction alerts ${para(state.policy.citations.alerts_for_kyc_refresh)}</div>` : ""}
+    <div class="thresholds">
+      <div class="th ${changed ? "changed" : ""}">Human review below confidence <b>${c.thresholds.confidence}</b></div>
+      <div class="th ${changed ? "changed" : ""}">Grey zone <b>${c.thresholds.grey_zone[0]}–${c.thresholds.grey_zone[1] - 1}</b></div>
+    </div>
+    <table><thead><tr><th>ID</th><th>When</th><th>Merchant</th><th class="num">Amount</th><th>Decision</th></tr></thead><tbody>${rows}</tbody></table>
+  </div>`;
+}
+
+function renderReview(r) {
+  const q = r.question || {};
+  const bullets = [...(q.risk_reasons || []), ...(q.why_review || []),
+                   ...(q.changes || []).map(c => `${fieldNames[c.field] || c.field}: ${fmt(c.before)} → ${fmt(c.after)} (¶ ${c.paragraph})`)];
+  const yes = r.pillar === "reg" || r.pillar === "kyc" ? "approve" : "approve";
+  const no = r.pillar === "tm" ? "block" : "reject";
+  return `<div class="review"><span class="pill p-${esc(r.pillar)}">${esc(r.pillar.toUpperCase())}</span><span class="meta">${esc(r.case_id)}</span>
+    <div class="q">${esc(q.question || "Decision needed")}${q.customer ? " — " + esc(q.customer) : ""}${q.transaction_id ? " — " + esc(q.transaction_id) : ""}</div>
+    ${q.reason ? `<div class="meta">Agent: ${esc(q.agent_decision)} (score ${esc(q.risk_score)}, confidence ${esc(q.confidence)}). ${esc(q.reason)}</div>` : ""}
+    <ul>${bullets.map(b => `<li>${esc(b)}</li>`).join("")}</ul>
+    <input id="note-${esc(r.case_id)}" placeholder="Reviewer note (optional)">
+    <div class="btns"><button class="btn ok" onclick="answer('${esc(r.case_id)}','${yes}')">Approve</button>
+    <button class="btn no" onclick="answer('${esc(r.case_id)}','${no}')">${no === "block" ? "Block" : "Reject"}</button></div></div>`;
+}
+
+async function poll() {
+  const r = await fetch(`/api/state?after=${lastSeq}`);
+  state = await r.json();
+  $("#mode").textContent = state.offline ? "OFFLINE REHEARSAL (scripted model)" : "LIVE MODELS";
+  $("#mode").className = "badge " + (state.offline ? "offline" : "live");
+  $("#status").textContent = state.status.running ? `Running: ${state.status.running}…` : "";
+  $("#err").textContent = state.status.error || "";
+  document.querySelectorAll(".step").forEach(b => b.disabled = !!state.status.running);
+  if (state.langsmith_project) $("#ls").textContent = `LangSmith: ${state.langsmith_project}`;
+
+  $("#customers").innerHTML = state.customers.map(renderCustomer).join("");
+  $("#reviews").innerHTML = state.reviews.length ? state.reviews.map(renderReview).join("") : "Nothing waiting for a human.";
+  $("#reviews").className = state.reviews.length ? "" : "empty";
+
+  const ch = state.policy_changes;
+  $("#policy").className = ch.length ? "" : "empty";
+  $("#policy").innerHTML = ch.length ? `<div class="meta">From <b>${esc(state.policy.source_document)}</b></div>
+    <table class="changes"><tbody>${ch.map(c => `<tr><td>${esc(fieldNames[c.field] || c.field)}${para(c.paragraph)}</td><td class="after">${esc(fmt(c.after))}</td></tr>`).join("")}</tbody></table>`
+    : "Baseline: the repo's default controls.";
+
+  for (const e of state.events) {
+    lastSeq = Math.max(lastSeq, e.seq);
+    const div = document.createElement("div"); div.className = "ev";
+    div.innerHTML = `<span class="pill p-${esc(e.pillar)}">${esc(e.pillar.toUpperCase())}</span>${esc(e.title)}<div class="t">${new Date(e.ts * 1000).toLocaleTimeString()}</div>`;
+    $("#feed").prepend(div);
+  }
+}
+poll(); setInterval(poll, 1200);
+</script>
+</body>
+</html>
