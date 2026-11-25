@@ -9,6 +9,7 @@ and LangSmith. Each topic has its own folder and README:
 | [`01_kyc_agent`](01_kyc_agent/README.md) | KYC onboarding | A LangGraph agent that extracts application details, screens against sanctions and PEP lists, and scores risk |
 | [`02_transaction_monitoring_agent`](02_transaction_monitoring_agent/README.md) | Transaction monitoring | A deep agent with memory and human review, then evaluated and improved with LangSmith |
 | [`03_document_summary_agent`](03_document_summary_agent/README.md) | Compliance brief | A LangGraph map-reduce workflow that summarises a long regulatory document into a reviewable brief |
+| [`04_fca_handbook_rag`](04_fca_handbook_rag/README.md) | FCA Handbook RAG | Search over the FCA Handbook with Qdrant, for agents that assess pull requests |
 
 ## Prerequisites
 
