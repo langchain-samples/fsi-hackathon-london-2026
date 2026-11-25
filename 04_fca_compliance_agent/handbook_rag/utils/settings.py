@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 from utils import PROJECT_ROOT
 
-load_dotenv(PROJECT_ROOT.parent / ".env")
+load_dotenv(PROJECT_ROOT.parent.parent / ".env")
 
 
 @dataclass(frozen=True)

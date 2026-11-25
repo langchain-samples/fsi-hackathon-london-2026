@@ -103,7 +103,7 @@ def _load_local_model(folder: Path, *, download: bool):
         raise LocalModelNotReady(
             f"The embedding model {LOCAL_MODEL} {reason} {folder} (or the copy there is damaged). To download it "
             f"(about 70 MB, from Hugging Face), run `uv run --no-sync python -m utils.embeddings` in "
-            f"04_fca_handbook_rag. Cause: {error}"
+            f"04_fca_compliance_agent/handbook_rag. Cause: {error}"
         ) from error
 
 

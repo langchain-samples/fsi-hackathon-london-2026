@@ -3,7 +3,14 @@
 Search over the FCA Handbook with [Qdrant](https://qdrant.tech), for agents that assess pull requests. It holds no real
 FCA text yet: see [PLAN.md](PLAN.md). `data/sample` is **fictional** (XSYS, XPRN) and must not be cited.
 
-Set up the shared environment first, from the [top level README](../README.md#setup). Run everything below from this
+Set up the shared environment first, from the [top level README](../../README.md#setup). Then add the RAG's packages, which
+are an optional extra, by running this from the repo root:
+
+```bash
+uv sync --all-packages --extra handbook-rag --extra dev
+```
+
+Run everything below from this
 folder.
 
 ## Embedding model
@@ -20,15 +27,15 @@ uv run --no-sync python -m utils.embeddings
 `EMBEDDING_MODEL=hash` matches words only. It needs no keys and is for testing.
 
 ```bash
-EMBEDDING_MODEL=hash uv run python -m scripts.ingest data/sample --alias fca_handbook_sample
+EMBEDDING_MODEL=hash uv run --no-sync python -m scripts.ingest data/sample --alias fca_handbook_sample
 ```
 
 ```bash
-EMBEDDING_MODEL=hash HANDBOOK_COLLECTION=fca_handbook_sample uv run python -m scripts.search "password in source code"
+EMBEDDING_MODEL=hash HANDBOOK_COLLECTION=fca_handbook_sample uv run --no-sync python -m scripts.search "password in source code"
 ```
 
 ```bash
-uv run pytest -q
+uv run --no-sync pytest -q
 ```
 
 ## Use it in an agent, over MCP
@@ -37,7 +44,7 @@ Start the server in its own terminal, and leave it running. It listens on this m
 `http://127.0.0.1:8765/mcp`:
 
 ```bash
-uv run python mcp_server.py
+uv run --no-sync python mcp_server.py
 ```
 
 The core agent gets its tools from `mcp_client.py`, a single file its project can copy. Set `HANDBOOK_MCP_URL` if the

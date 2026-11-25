@@ -7,6 +7,8 @@ from langchain.tools import tool
 from utils import store
 from utils.references import parse_reference
 
+NO_MATCHES = "No provisions matched."
+
 _FIELDS = (
     "citation", "provision_type", "heading_path", "text", "effective_from", "effective_to", "url", "snapshot_date",
     "source", "attribution",
@@ -45,7 +47,7 @@ def search_handbook(
         rows = store.search(query, _date(as_of), sourcebooks, provision_types, max(1, min(limit, 20)))
     except (store.IndexNotReady, ValueError) as error:
         return f"Error: {error}"
-    return [_public(row) for row in rows] or "No provisions matched."
+    return [_public(row) for row in rows] or NO_MATCHES
 
 
 @tool(parse_docstring=True)

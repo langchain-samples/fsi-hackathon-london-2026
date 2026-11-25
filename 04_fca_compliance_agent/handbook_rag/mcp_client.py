@@ -68,7 +68,7 @@ def _as_langchain(server: Any, tool: Any) -> BaseTool:
 
 
 def load_handbook_tools(server: Any = None) -> list[BaseTool]:
-    """Every tool the server offers. The server must be running: start it with `uv run python mcp_server.py`."""
+    """Every tool the server offers. The server must be running: start it with `uv run --no-sync python mcp_server.py`."""
     target = server or os.environ.get("HANDBOOK_MCP_URL", DEFAULT_URL)
 
     async def fetch() -> list:

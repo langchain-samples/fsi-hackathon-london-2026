@@ -1,21 +1,23 @@
 """The Handbook RAG as an MCP server, so any agent can use it as a tool. Run it from this folder:
 
-    uv run python mcp_server.py            # HTTP on http://127.0.0.1:8765/mcp: one server that every agent call shares
-    uv run python mcp_server.py --stdio    # started by one MCP client, over stdin and stdout
+    uv run --no-sync python mcp_server.py            # HTTP on http://127.0.0.1:8765/mcp: one server that every agent call shares
+    uv run --no-sync python mcp_server.py --stdio    # started by one MCP client, over stdin and stdout
 
 Use HTTP for agents with parallel sub-agents: local Qdrant allows one process, and stdio clients may start several.
 HTTP only listens on this machine. The server is read-only, and never loads FCA credentials.
 """
 
 import argparse
+import functools
 import inspect
 from datetime import date
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from tools.handbook import HANDBOOK_TOOLS
+from tools.handbook import HANDBOOK_TOOLS, NO_MATCHES
 from utils import store, verification
 
 PORT = 8765
@@ -55,7 +57,24 @@ def index_status() -> dict[str, Any]:
 
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
-for _function in [*(t.func for t in HANDBOOK_TOOLS), check_citation, index_status]:
+
+
+def _fail_loudly(function):
+    """A message such as "Error: no index" must not reach a caller as if it were Handbook text."""
+
+    @functools.wraps(function)
+    def wrapper(*args, **kwargs):
+        result = function(*args, **kwargs)
+        if result == NO_MATCHES:
+            return []
+        if isinstance(result, str):
+            raise ToolError(result)
+        return result
+
+    return wrapper
+
+
+for _function in [*(_fail_loudly(t.func) for t in HANDBOOK_TOOLS), check_citation, index_status]:
     server.add_tool(_function, description=inspect.getdoc(_function), annotations=_READ_ONLY)
 
 

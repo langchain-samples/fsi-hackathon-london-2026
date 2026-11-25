@@ -23,6 +23,9 @@ sub-agent per section, checked quotes) but is a separate project. Written 25 Nov
 | Scope | SYSC, PRIN, COBS and the Glossary |
 | How the agent uses the RAG | As MCP tools, over HTTP. It never opens Qdrant or the FCA API itself |
 | Embeddings | Local model, so any demo PC can run it. It must be the same model for indexing and searching |
+| Where the code lives | `04_fca_compliance_agent/handbook_rag`, run as a separate MCP server. Its packages are the `handbook-rag` extra |
+| Tools | **Open.** Suggested: `search_fca_handbook` and `check_citation`. The core agent cannot use the current six yet |
+| CONC (consumer credit) | **Open.** Suggested, because the core agent mostly cites it. The Consumer Credit Act itself is not in the Handbook |
 | Qdrant storage | On-disk folder (`.qdrant`) on the demo laptop. No Qdrant Cloud or server for now |
 
 ### If we need to demo from a different PC
@@ -55,7 +58,7 @@ All the options, without running our own Qdrant server:
 
 ### Credentials
 
-- Put the FCA username and API token in `04_fca_handbook_rag/.env.fca` (git-ignored). Never the website password.
+- Put the FCA username and API token in `04_fca_compliance_agent/handbook_rag/.env.fca` (git-ignored). Never the website password.
 - Only the downloader process may read that file. The agent and its tools must not load it, so do not put the token in
   the shared `.env`, which every agent loads.
 - If an agent is ever given a shell or file access, run it where `.env` and `.env.fca` are not readable.

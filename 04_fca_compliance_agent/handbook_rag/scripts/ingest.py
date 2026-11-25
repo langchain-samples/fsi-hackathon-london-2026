@@ -1,6 +1,6 @@
-"""Build the Handbook index from a snapshot folder. Run it from `04_fca_handbook_rag`:
+"""Build the Handbook index from a snapshot folder. Run it from `04_fca_compliance_agent/handbook_rag`:
 
-    uv run python -m scripts.ingest data/sample --alias fca_handbook_sample
+    uv run --no-sync python -m scripts.ingest data/sample --alias fca_handbook_sample
 """
 
 import argparse

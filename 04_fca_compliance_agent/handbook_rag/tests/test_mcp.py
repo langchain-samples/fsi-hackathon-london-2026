@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from langchain_core.tools import ToolException
 from mcp import StdioServerParameters
 from mcp_client import call_handbook, load_handbook_tools
 from mcp_server import server
@@ -38,6 +39,29 @@ def test_check_citation_and_status(index):
 
 def test_no_index_is_reported(empty_index):
     assert call_handbook("index_status", {}, server)["ready"] is False
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments"),
+    [
+        ("search_fca_handbook", {"query": "x"}),  # not a tool of this server
+        ("search_handbook", {"query": "x", "as_of": "soon"}),
+        ("get_provision", {"reference": "XSYS 99.9.9R", "as_of": TODAY}),
+    ],
+)
+def test_failures_are_errors_not_text(index, name, arguments):
+    with pytest.raises(ToolException):
+        call_handbook(name, arguments, server)
+
+
+def test_a_search_without_an_index_is_an_error(empty_index):
+    with pytest.raises(ToolException, match="no Handbook index"):
+        call_handbook("search_handbook", {"query": "x"}, server)
+
+
+def test_a_search_that_matches_nothing_is_empty(index):
+    arguments = {"query": "x", "sourcebooks": ["NONE"], "as_of": TODAY}
+    assert call_handbook("search_handbook", arguments, server) == []
 
 
 def test_bad_arguments_become_a_message_for_the_model(index):

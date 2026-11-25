@@ -1,6 +1,6 @@
-"""Try a search from the terminal. Run it from `04_fca_handbook_rag`:
+"""Try a search from the terminal. Run it from `04_fca_compliance_agent/handbook_rag`:
 
-    uv run python -m scripts.search "testing changes before release"
+    uv run --no-sync python -m scripts.search "testing changes before release"
 """
 
 import argparse
