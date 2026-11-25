@@ -385,6 +385,37 @@ class TestSetupOrchestrator(unittest.TestCase):
             self.assertIn("LANGSMITH_WORKSPACE_ID=ws-123", text)
             self.assertIn("GITHUB_ORG=natchainsix", text)
 
+    def test_noisy_polling_access_logs_are_filtered_while_agent_and_error_logs_pass(self) -> None:
+        import logging
+        from fca_compliance_agent.adapters.http_api import _QuietPollingAccessFilter
+
+        self.assertTrue(
+            self.mod.is_noisy_log_line('INFO:     127.0.0.1:51234 - "GET /api/status HTTP/1.1" 200 OK')
+        )
+        self.assertTrue(
+            self.mod.is_noisy_log_line('INFO:     127.0.0.1:51234 - "GET /health HTTP/1.1" 200 OK')
+        )
+        self.assertTrue(
+            self.mod.is_noisy_log_line('INFO:     127.0.0.1:51234 - "GET /api/findings?limit=100 HTTP/1.1" 200 OK')
+        )
+        self.assertFalse(
+            self.mod.is_noisy_log_line('INFO:     127.0.0.1:51234 - "POST /api/runs HTTP/1.1" 202 Accepted')
+        )
+        self.assertFalse(
+            self.mod.is_noisy_log_line('INFO:     127.0.0.1:51234 - "GET /health HTTP/1.1" 500 Internal Server Error')
+        )
+        self.assertFalse(
+            self.mod.is_noisy_log_line("2026-11-25 INFO [fca_compliance_agent.core.nodes] Triage started for repo (9 unit(s))")
+        )
+
+        flt = _QuietPollingAccessFilter()
+        rec_health = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d', ("127.0.0.1", "GET", "/health", "1.1", 200), None)
+        rec_run = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d', ("127.0.0.1", "POST", "/api/runs", "1.1", 202), None)
+        rec_err = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d', ("127.0.0.1", "GET", "/health", "1.1", 503), None)
+        self.assertFalse(flt.filter(rec_health))
+        self.assertTrue(flt.filter(rec_run))
+        self.assertTrue(flt.filter(rec_err))
+
 
 if __name__ == "__main__":
     unittest.main()
