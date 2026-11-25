@@ -1,0 +1,3 @@
+{"dispute_id": "DSP-0901", "customer_id": "CUST-102", "transaction_id": "TX-4410", "merchant": "PixelGames Store", "reason_code": "fraud_card_not_present", "outcome": "lost", "notes": "Merchant showed purchase from customer's usual device and IP.", "opened": "2026-07-02"}
+{"dispute_id": "DSP-0902", "customer_id": "CUST-102", "transaction_id": "TX-4522", "merchant": "SkyFlix", "reason_code": "fraud_card_not_present", "outcome": "lost", "notes": "Customer later admitted a family member made the purchase.", "opened": "2026-08-19"}
+{"dispute_id": "DSP-0903", "customer_id": "CUST-104", "transaction_id": "TX-3105", "merchant": "AirLink", "reason_code": "goods_not_received", "outcome": "won", "notes": "Flight cancelled by airline, refund not issued.", "opened": "2025-03-11"}

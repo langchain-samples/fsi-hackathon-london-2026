@@ -32,7 +32,7 @@ def record_decision(
     model_confidence = confidence
 
     transaction = db.get("transactions", transaction_id=transaction_id, user_id=user_id)
-    checks = _confidence_checks(risk_score, transaction, user_id, ctx.grey_zone)
+    checks = confidence_checks(risk_score, transaction, user_id, ctx.grey_zone)
     if checks:
         confidence = min(confidence, ctx.checked_confidence)
 
@@ -72,8 +72,11 @@ def record_decision(
     return f"Recorded {transaction_id}: {final_decision} (decided by {decided_by})."
 
 
-def _confidence_checks(
-    risk_score: int, transaction: dict | None, user_id: str, grey_zone: tuple[int, int]
+def confidence_checks(
+    risk_score: int,
+    transaction: dict | None,
+    user_id: str,
+    grey_zone: tuple[int, int] | None = None,
 ) -> list[str]:
     """Return the reasons a human should review this decision, whatever the model's confidence.
 
@@ -82,10 +85,14 @@ def _confidence_checks(
         transaction: The transaction being decided, or None if it wasn't found for this customer.
         user_id: The ID of the customer the transaction belongs to.
         grey_zone: Risk scores from grey_zone[0] up to (not including) grey_zone[1] are "unusual, but could be legitimate".
+            Defaults to the agent context's grey zone.
 
     Returns:
         A list of plain-English reasons; empty if no check fired.
     """
+    if grey_zone is None:
+        grey_zone = MyAgentContext().grey_zone
+
     reasons = []
     if grey_zone[0] <= risk_score < grey_zone[1]:
         reasons.append(f"risk score {risk_score} is in the grey zone ({grey_zone[0]}-{grey_zone[1] - 1})")

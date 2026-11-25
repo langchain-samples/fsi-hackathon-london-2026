@@ -8,4 +8,4 @@ requires-python = ">=3.11"
 dependencies = []
 
 [tool.uv.workspace]
-members = ["01_kyc_agent", "02_transaction_monitoring_agent", "03_document_summary_agent"]
+members = ["01_kyc_agent", "02_transaction_monitoring_agent", "03_document_summary_agent", "the_friendly_fraudsters"]

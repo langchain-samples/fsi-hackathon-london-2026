@@ -1,0 +1,8 @@
+{"customer_id": "CUST-101", "name": "Priya Shah", "home_country": "GB", "customer_since": 2020, "vulnerable": false}
+{"customer_id": "CUST-102", "name": "Tom Hughes", "home_country": "GB", "customer_since": 2023, "vulnerable": false}
+{"customer_id": "CUST-103", "name": "Amara Okafor", "home_country": "GB", "customer_since": 2018, "vulnerable": true}
+{"customer_id": "CUST-104", "name": "Daniel Brooks", "home_country": "GB", "customer_since": 2015, "vulnerable": false}
+{"customer_id": "CUST-105", "name": "Grace Lin", "home_country": "GB", "customer_since": 2021, "vulnerable": false}
+{"customer_id": "CUST-106", "name": "Ryan Patel", "home_country": "GB", "customer_since": 2022, "vulnerable": false}
+{"customer_id": "CUST-107", "name": "Margaret Ellis", "home_country": "GB", "customer_since": 1998, "vulnerable": false}
+{"customer_id": "CUST-108", "name": "Jordan Reid", "home_country": "GB", "customer_since": 2024, "vulnerable": false}

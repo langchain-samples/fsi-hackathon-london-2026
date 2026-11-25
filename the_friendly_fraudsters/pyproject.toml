@@ -1,0 +1,15 @@
+[project]
+name = "card-dispute-agent"
+version = "0.1.0"
+description = "Hackathon project: card dispute and chargeback agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=1.0,<2",
+    "langchain-openai>=1.0,<2",
+    "python-dotenv>=1.0,<2",
+    "langgraph-cli[inmem]>=0.4,<1",
+    "langchain>=1.0,<2",
+    "langchain-anthropic>=1.0,<2",
+    "langsmith",
+]
