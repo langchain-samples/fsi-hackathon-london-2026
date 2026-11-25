@@ -64,6 +64,18 @@ def test_search_returns_snippets(empty_index):
     assert len(result["text"]) < 320 and result["text"].endswith("[...]")
 
 
+def test_a_short_part_of_a_long_provision_is_marked_as_cut(empty_index):
+    tail = "Zebras are exempt."
+    build(Provision(ref="XBIG 1.1.1R", provision_type="R", text="word " * 299 + "word\n" + tail))
+    result = search_fca_handbook("zebras exempt", as_of=TODAY)["results"][0]
+    assert (result["reference"], result["text"]) == ("XBIG 1.1.1R", f"{tail} [...]")
+
+
+def test_a_short_whole_provision_is_not_marked_as_cut(index):
+    result = search_fca_handbook("approved by a person other than", top_k=1, as_of=TODAY)["results"][0]
+    assert result["reference"] == "XSYS 4.2.1R" and result["text"].endswith("made it.")
+
+
 @pytest.mark.parametrize(
     ("scope", "books", "missing"),
     [
@@ -152,6 +164,38 @@ def test_a_provision_over_the_limit_is_never_cut(empty_index, monkeypatch):
     ],
 )
 def test_section_refuses_what_it_does_not_have(index, reference, message):
+    with pytest.raises(ValueError, match=message):
+        get_fca_section(reference, as_of=TODAY)
+
+
+LETTERED = ("XBIG 6.1.1R", "XBIG 6.1G.1R", "XBIG 5.1.1R", "XBIG 5C.1.1R", "XBIG 7 Annex 1.1R", "XBIG 7 Annex 2R")
+
+
+@pytest.mark.parametrize(
+    ("reference", "section", "provisions"),
+    [
+        ("XBIG 6.1G", "XBIG 6.1G", ["XBIG 6.1G.1R"]),
+        ("XBIG 6.1", "XBIG 6.1", ["XBIG 6.1.1R"]),
+        ("XBIG 7 Annex 1R", "XBIG 7 ANNEX 1", ["XBIG 7 Annex 1.1R"]),
+        ("XBIG 7 Annex 2R", "XBIG 7 ANNEX 2", ["XBIG 7 Annex 2R"]),
+    ],
+)
+def test_a_section_number_may_end_in_a_type_letter(empty_index, reference, section, provisions):
+    build(*(Provision(ref=ref, provision_type="R", text="A firm must keep records.") for ref in LETTERED))
+    found = get_fca_section(reference, as_of=TODAY)
+    assert (found["section"], cites(found)) == (section, provisions)
+
+
+@pytest.mark.parametrize(
+    ("reference", "message"),
+    [
+        ("XBIG 5C", "Sections in XBIG 5C: XBIG 5C.1."),
+        ("XBIG 6.1D", "not in force"),  # no such section, and it is not XBIG 6.1
+        ("XBIG 7 Annex 1G", "not in force"),  # the annex holds only rules
+    ],
+)
+def test_a_lettered_reference_never_gives_another_section(empty_index, reference, message):
+    build(*(Provision(ref=ref, provision_type="R", text="A firm must keep records.") for ref in LETTERED))
     with pytest.raises(ValueError, match=message):
         get_fca_section(reference, as_of=TODAY)
 

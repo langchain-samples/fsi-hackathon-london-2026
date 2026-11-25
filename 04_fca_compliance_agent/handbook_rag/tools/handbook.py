@@ -7,7 +7,7 @@ from datetime import date
 from typing import Any
 
 from utils import store, verification
-from utils.references import parse_reference, section_of
+from utils.references import Reference, parse_reference, section_of
 
 SNIPPET = 300
 SECTION_LIMIT = 12_000  # characters, about 3,000 tokens
@@ -63,9 +63,16 @@ def search_fca_handbook(
     rows = [] if missing and not scope else store.search(query, day, scope or None, max(1, min(top_k, 20)))
     results = []
     for row in rows:
-        text = " ".join(row["text"].split())
-        results.append(_describe(row, text if len(text) <= SNIPPET else text[:SNIPPET].rsplit(" ", 1)[0] + " [...]"))
+        results.append(_describe(row, _snippet(row)))
     return {"results": results, "not_in_index": missing}
+
+
+def _snippet(row: dict) -> str:
+    """The start of what matched. It ends in [...] unless it is the whole provision: a match may be one part of a long one."""
+    text = " ".join(row["text"].split())
+    if len(text) > SNIPPET:
+        return text[:SNIPPET].rsplit(" ", 1)[0] + " [...]"
+    return text if row["text"] == row["full_text"] else text + " [...]"
 
 
 def _size(rows: list[dict]) -> int:
@@ -117,10 +124,10 @@ def get_fca_section(reference: str, as_of: str | None = None) -> dict[str, Any]:
         raise ValueError(f"{reference!r} is not a Handbook reference")
     day = _date(as_of)
     row = store.get(reference, day)
-    section = row["section"] if row else section_of(parsed.key)
+    section = row["section"] if row else _section_named(parsed, day)
+    if section is None:
+        raise ValueError(f"{reference} is not in force in the index. Do not cite it.{_suggest(parsed, day)}")
     rows = store.get_section(section, day)
-    if not rows or (row is None and parsed.key != section):
-        raise ValueError(f"{reference} is not in force in the index. Do not cite it.{_suggest(parsed.key, day)}")
     anchor = next((i for i, r in enumerate(rows) if row and r["citation"] == row["citation"]), 0)
     chosen, mode = _select(rows, anchor, SECTION_LIMIT)
     shown = {r["citation"] for r in chosen}
@@ -146,10 +153,24 @@ def _capped(text: str) -> str:
     return f"{text[:PROVISION_LIMIT].rsplit(chr(10), 1)[0]}\n[...] {len(text) - PROVISION_LIMIT:,} more characters: see the url"
 
 
-def _suggest(key: str, day: date) -> str:
-    """A chapter such as "SYSC 15A" has no text of its own, so list its sections."""
-    options = store.sections(key, day)
-    return f" Sections in {key}: {', '.join(options)}." if options else ""
+def _section_named(parsed: Reference, day: date) -> str | None:
+    """The section a reference names, if it names one. "COBS 6.1G" is a section of its own, and not COBS 6.1."""
+    exact = parsed.candidate_keys()[-1]
+    if section_of(exact) == exact and store.get_section(exact, day):
+        return exact
+    # An annex may be named with the type of its provisions: "SYSC 22 Annex 1R" for "SYSC 22 Annex 1.1R" and so on.
+    if parsed.type and " ANNEX " in parsed.key and section_of(parsed.key) == parsed.key:
+        if any(r["provision_type"] == parsed.type for r in store.get_section(parsed.key, day)):
+            return parsed.key
+    return None
+
+
+def _suggest(parsed: Reference, day: date) -> str:
+    """A chapter such as "SYSC 15A" has no text of its own, so list its sections. "CONC 5C" is not CONC 5."""
+    for key in reversed(parsed.candidate_keys()):
+        if options := store.sections(key, day):
+            return f" Sections in {key}: {', '.join(options)}."
+    return ""
 
 
 def check_fca_citation(reference: str, quote: str, as_of: str | None = None) -> dict[str, Any]:
