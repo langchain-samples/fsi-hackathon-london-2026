@@ -131,4 +131,4 @@ class LangChainComplianceAnalyzer:
             findings=findings,
         )
         response = await self._model().ainvoke(prompt)
-        return str(response.content).strip()
+        return str(response.text).strip()  # `content` can be a list of blocks
