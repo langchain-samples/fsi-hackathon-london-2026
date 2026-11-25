@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 from tests.conftest import SAMPLE
 from tools import handbook
-from tools.handbook import check_citation, get_fca_section, search_fca_handbook
+from tools.handbook import check_fca_citation, get_fca_section, search_fca_handbook
 from utils import store
 from utils.schema import Provision, Snapshot
 
@@ -161,13 +161,13 @@ def test_a_rule_not_yet_in_force_is_refused(index):
         get_fca_section("XSYS 5.1.1R", as_of="2024-12-31")
 
 
-# --- check_citation ------------------------------------------------------------------------------------------------
+# --- check_fca_citation ---------------------------------------------------------------------------------------------
 
 
 def test_check_citation(index):
-    good = check_citation("XSYS 4.2.1R", "approved by a person other than the person who made it", TODAY)
+    good = check_fca_citation("XSYS 4.2.1R", "approved by a person other than the person who made it", TODAY)
     assert (good["ok"], good["binding"], good["source"]) == (True, True, "fictional-sample")
-    guidance = check_citation("XSYS 4.1.2G", "should consider automated regression tests", TODAY)
+    guidance = check_fca_citation("XSYS 4.1.2G", "should consider automated regression tests", TODAY)
     assert (guidance["ok"], guidance["binding"]) == (True, False)
     for reference, quote in (
         ("XSYS 4.2.1R", "approved by two people every time"),
@@ -176,7 +176,7 @@ def test_check_citation(index):
         ("XSYS 4.2.1R", "  "),
         ("XSYS 4.2.2G", "approved by a person other than the person who made it"),
     ):
-        assert check_citation(reference, quote, TODAY)["ok"] is False
+        assert check_fca_citation(reference, quote, TODAY)["ok"] is False
 
 
 # --- the index -----------------------------------------------------------------------------------------------------
@@ -186,7 +186,7 @@ def test_missing_index_bad_dates_and_wrong_model_raise(empty_index, monkeypatch)
     for call in (
         lambda: search_fca_handbook("x"),
         lambda: get_fca_section("XSYS 4.1.1R"),
-        lambda: check_citation("XSYS 4.1.1R", "x"),
+        lambda: check_fca_citation("XSYS 4.1.1R", "x"),
     ):
         with pytest.raises(store.IndexNotReady, match="Run scripts/ingest.py"):
             call()

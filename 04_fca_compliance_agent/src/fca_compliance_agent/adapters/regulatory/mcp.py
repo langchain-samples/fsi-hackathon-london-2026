@@ -82,7 +82,7 @@ class MCPToolMapping:
     filter_arg: str | None = None
     reference_arg: str = "reference"
     section_tool: str | None = "get_fca_section"
-    citation_tool: str | None = "check_citation"
+    citation_tool: str | None = "check_fca_citation"
 
 
 def _structured(raw_result: Any) -> dict[str, Any]:
@@ -118,14 +118,15 @@ def parse_mcp_passages(
       - Python lists of dicts or strings
       - Single dicts or plain-text markdown strings
 
-    Raises `MCPToolError` if the result is an error, so that a failed search cannot be mistaken
-    for evidence, or for a search that found no rules.
+    An error gives no passages, because its message is not evidence. Callers that must tell a failure
+    from an empty result call `_raise_if_error` first.
     """
-    _raise_if_error(raw_result)
     payload = raw_result
 
     # Ignore MCP tool-level errors (e.g. an unknown CCA section requested by triage)
-    if getattr(payload, "isError", False):
+    try:
+        _raise_if_error(payload)
+    except MCPToolError:
         return []
 
     # Unwrap official MCP SDK CallToolResult-like objects if present
@@ -357,6 +358,7 @@ class MCPFCAHandbookAdapter(_BaseMCPClientAdapter):
             args[self._mapping.filter_arg] = sourcebooks
 
         raw = await self._call_tool(self._mapping.search_tool, args)
+        _raise_if_error(raw)
         passages = parse_mcp_passages(raw, source="fca_handbook", default_reference="FCA")
         return list(await asyncio.gather(*(self._in_full(p) for p in passages)))
 
@@ -373,6 +375,7 @@ class MCPFCAHandbookAdapter(_BaseMCPClientAdapter):
                 self._mapping.fetch_tool,
                 {self._mapping.reference_arg: reference},
             )
+            _raise_if_error(raw)
             passages = parse_mcp_passages(raw, source="fca_handbook", default_reference=reference)
             return passages[0] if passages else None
 
@@ -478,6 +481,7 @@ class MCPConsumerCreditActAdapter(_BaseMCPClientAdapter):
             if self._mapping.filter_arg and sections:
                 args[self._mapping.filter_arg] = sections
             raw = await self._call_tool(self._mapping.search_tool, args)
+            _raise_if_error(raw)
             return parse_mcp_passages(
                 raw, source="consumer_credit_act", default_reference="CCA 1974"
             )
@@ -491,6 +495,13 @@ class MCPConsumerCreditActAdapter(_BaseMCPClientAdapter):
             if section is not None:
                 args[self._mapping.reference_arg] = section
             raw = await self._call_tool(self._mapping.fetch_tool, args)
+            try:
+                _raise_if_error(raw)
+            except MCPToolError as error:
+                # Triage can guess a section that does not exist. Any other failure must not pass unnoticed.
+                if section is None or str(error).startswith("Unknown tool"):
+                    raise
+                return []
             return parse_mcp_passages(
                 raw,
                 source="consumer_credit_act",

@@ -10,14 +10,14 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
-from utils.references import TYPES, find_references, parse_reference, section_of
+from utils.references import TYPES, find_references, parse_reference, pretty, section_of
 
 
 class Provision(BaseModel):
     """One version of one Handbook provision."""
 
     ref: str = Field(description="For example 'SYSC 15A.2.1R'")
-    provision_type: str = Field(description="R rule, G guidance, E evidential, UK, EU, D, P, C")
+    provision_type: str = Field(description="R rule, G guidance, E evidential, UK, EU, D, P, C; empty if none")
     heading_path: list[str] = Field(default_factory=list, description="Headings from sourcebook down to section")
     subheading: str | None = Field(default=None, description="The heading within the section it sits under, if any")
     text: str = Field(min_length=1)
@@ -35,7 +35,7 @@ class Provision(BaseModel):
     @field_validator("provision_type")
     @classmethod
     def _valid_type(cls, value: str) -> str:
-        if value not in TYPES:
+        if value not in (*TYPES, ""):
             raise ValueError(f"unknown provision type {value!r}")
         return value
 
@@ -51,7 +51,7 @@ class Provision(BaseModel):
 
     @property
     def chapter(self) -> str:
-        return self.key.split(".")[0]
+        return self.key.split(" ANNEX ")[0].split(".")[0]
 
     @property
     def section(self) -> str:
@@ -59,7 +59,7 @@ class Provision(BaseModel):
 
     @property
     def citation(self) -> str:
-        return f"{self.key}{self.provision_type}"
+        return f"{pretty(self.key)}{self.provision_type}"
 
     @property
     def cites(self) -> list[str]:

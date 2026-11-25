@@ -94,7 +94,7 @@ The HTTP server exposes all four tools at the same URL. Set both variables to th
 ## FCA Handbook RAG
 
 [`handbook_rag`](handbook_rag/README.md) is an MCP server over the FCA Handbook: `search_fca_handbook`,
-`get_fca_section` and `check_citation`. Run it in its own terminal, with `fca-regulatory-mcp` for the Consumer Credit Act,
+`get_fca_section` and `check_fca_citation`. Run it in its own terminal, with `fca-regulatory-mcp` for the Consumer Credit Act,
 then set both URLs in `.env`:
 
 ```bash
@@ -110,8 +110,8 @@ FCA_MCP_URL=http://127.0.0.1:8765/mcp
 CCA_MCP_URL=http://127.0.0.1:8001/mcp
 ```
 
-It holds **fictional sample rules only**, until real FCA text is loaded, and has no CONC or UK GDPR. Keep the mock rules
-for a consumer credit demo until then, by leaving `FCA_MCP_URL` unset.
+Each person loads the real text first (SYSC, PRIN, COBS, CONC and the Glossary): see its README. It has no UK GDPR, which
+only the mock rules cover, so with `FCA_MCP_URL` set, UK GDPR rules are not searched.
 
 ## Swapping Context Modules
 

@@ -17,7 +17,7 @@ from utils.schema import Provision, Snapshot
 
 ROOT = Path(__file__).resolve().parent.parent
 LONG_RULE = "A firm must keep careful records of every decision. " * 20 + "Except on Sundays."
-NAMES = {"search_fca_handbook", "get_fca_section", "check_citation"}
+NAMES = {"search_fca_handbook", "get_fca_section", "check_fca_citation"}
 
 
 async def _call(target, name, arguments):

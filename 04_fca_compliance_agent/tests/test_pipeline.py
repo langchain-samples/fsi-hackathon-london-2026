@@ -430,10 +430,21 @@ class TestMCPErrorsAreNotEvidence(unittest.IsolatedAsyncioTestCase):
                 lambda: fca.search_rules("affordability"),
                 lambda: fca.get_rule("CONC 5.2A.4R"),
                 lambda: cca.query_provisions("withdrawal"),
-                lambda: cca.get_document("s.66A"),
+                lambda: cca.get_document(),
             ):
                 with self.subTest(failure=failure), self.assertRaises(MCPToolError):
                     await call()
+
+    async def test_a_guessed_cca_section_does_not_stop_the_review(self) -> None:
+        def failing(text: str) -> Any:
+            async def caller(name: str, arguments: dict[str, Any]) -> Any:
+                return SimpleNamespace(is_error=True, content=[SimpleNamespace(text=text)])
+
+            return MCPConsumerCreditActAdapter(caller=caller)
+
+        self.assertEqual(await failing("Error executing tool: no section 999").get_document("999"), [])
+        with self.assertRaises(MCPToolError):
+            await failing("Unknown tool: get_consumer_credit_act_document").get_document("66A")
 
     async def test_success_and_empty_results_still_work(self) -> None:
         payload = json.dumps([{"reference": "CONC 5.2A.4R", "text": "An error in the rule text."}])

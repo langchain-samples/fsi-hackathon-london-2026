@@ -22,10 +22,15 @@ _NAMESPACE = uuid.UUID("7f6f6a3e-5d1c-4a52-9a53-0a4f6d0b1c11")
 _BATCH = 64
 _FORMAT = 2  # raise this when what is stored changes, so the next ingest rebuilds the index
 _MAX_CHARS = 1500  # the local model reads 512 tokens and silently ignores the rest
-BINDING = ("R", "UK", "EU", "D")  # rules, retained law and directions; not guidance (G) or evidential (E)
+_BINDING = ("R", "UK", "EU", "D")  # rules, retained law and directions; not guidance (G) or evidential (E)
 _OPEN_ENDED = date.max.toordinal()
 # Local Qdrant is in-process and not built for parallel access; sub-agents search in parallel threads.
 _lock = threading.RLock()
+
+
+def is_binding(provision_type: str) -> bool | None:
+    """None if the Handbook gives no type, as for transitional tables and schedules."""
+    return provision_type in _BINDING if provision_type else None
 
 
 class IndexNotReady(RuntimeError):

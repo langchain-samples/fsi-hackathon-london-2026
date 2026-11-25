@@ -1,7 +1,7 @@
 # FCA Handbook RAG
 
-Search over the FCA Handbook with [Qdrant](https://qdrant.tech), for agents that assess pull requests. It holds no real
-FCA text yet: see [PLAN.md](PLAN.md). `data/sample` is **fictional** (XSYS, XPRN) and must not be cited.
+Search over the FCA Handbook with [Qdrant](https://qdrant.tech), as an MCP server. The repo holds no FCA text: you download
+it (below). `data/sample` is **fictional** (XSYS, XPRN), for tests, and must not be cited. See [PLAN.md](PLAN.md).
 
 Set up the shared environment first, from the [top level README](../../README.md#setup). Then add the RAG's packages, which
 are an optional extra, by running this from the repo root:
@@ -21,6 +21,22 @@ After that it works offline, and nothing else downloads it:
 ```bash
 uv run --no-sync python -m utils.embeddings
 ```
+
+## Load the real Handbook
+
+Each person downloads with their own free [FCA Handbook account](https://handbook.fca.org.uk/handbook-api). Put the token in
+`.env.fca` in the repo root, as `FCA_HANDBOOK_API_TOKEN=...`. It is git-ignored, and only this script reads it:
+
+```bash
+uv run --no-sync python -m scripts.download
+```
+
+```bash
+uv run --no-sync python -m scripts.ingest data/snapshots/<date>
+```
+
+That is SYSC, PRIN, COBS, CONC and the Glossary: 130 chapters, about 5 minutes to download and 3 to embed. The text
+and the index stay on this machine (both are git-ignored). © FCA, used under the Open Government Licence v3.0.
 
 ## Try it offline
 
@@ -53,7 +69,7 @@ The core agent connects with `FCA_MCP_URL=http://127.0.0.1:8765/mcp` (see the [c
 |------|-----|---------|
 | `search_fca_handbook` | Breadth: which rules might matter? | A short list: reference, heading, type and a snippet |
 | `get_fca_section` | Depth: what does the whole section say? | Every rule and guidance paragraph in order, definitions used, and links outside the section |
-| `check_citation` | Verification: is the quote real? | OK, or the problem, and whether the provision is binding |
+| `check_fca_citation` | Verification: is the quote real? | OK, or the problem, and whether the provision is binding |
 
 A section over 12,000 characters is cut down, never mid-provision: to the group under the provision's sub-heading, or to
 its neighbours on each side. `complete` is then false and `outline` lists the rest. Failures are MCP errors, never text.

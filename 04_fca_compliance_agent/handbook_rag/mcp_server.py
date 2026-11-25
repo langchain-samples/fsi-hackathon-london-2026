@@ -24,7 +24,7 @@ server = MCPServer(
     "fca-handbook",
     instructions=(
         "The FCA Handbook. Search widely with search_fca_handbook, read the whole section with get_fca_section before "
-        "judging, and check every quote with check_citation. Never present a result whose source is "
+        "judging, and check every quote with check_fca_citation. Never present a result whose source is "
         "'fictional-sample' as FCA text."
     ),
 )

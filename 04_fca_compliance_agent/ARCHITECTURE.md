@@ -152,7 +152,7 @@ flowchart TB
     subgraph TOOLS["MCP tools"]
         FCA[/"TOOL: search_fca_handbook<br/>TOOL: get_fca_section<br/>FCA Handbook RAG"/]
         CCA[/"TOOL: query_consumer_credit_act<br/>TOOL: get_consumer_credit_act_document<br/>CCA server"/]
-        CIT[/"TOOL: check_citation<br/>FCA Handbook RAG<br/>not called yet"/]
+        CIT[/"TOOL: check_fca_citation<br/>FCA Handbook RAG<br/>not called yet"/]
     end
 
     GATE{"human_review_gate<br/>FUNCTION + optional HUMAN<br/>approve / filter / reject"}
@@ -192,7 +192,7 @@ flowchart TB
 | **Agent** | A model chooses its own tools and next step, in a loop | None built yet. Placeholder: the review in `analyze_unit`. Planned: Module 2 remediation |
 | **LLM step** | One model call with a fixed prompt and no tools | `triage_units`, the cross-check in `analyze_unit` (until the agent replaces it), the summary in `synthesize_report` |
 | **Function** | Plain code, no model | Inbound and outbound adapters, routing, retrieval, grounding citations, ranking, verdict, report |
-| **Tool** | Read-only, called over MCP (mock adapters unless `FCA_MCP_URL` and `CCA_MCP_URL` are set) | `search_fca_handbook`, `get_fca_section`, `check_citation`, `query_consumer_credit_act`, `get_consumer_credit_act_document` |
+| **Tool** | Read-only, called over MCP (mock adapters unless `FCA_MCP_URL` and `CCA_MCP_URL` are set) | `search_fca_handbook`, `get_fca_section`, `check_fca_citation`, `query_consumer_credit_act`, `get_consumer_credit_act_document` |
 | **Human** | A person decides. Off by default (`require_human_approval=False`), so reports are auto-approved | `human_review_gate` |
 
 **For the agent that fills the placeholder:** `FCAHandbookResearchPort` (`ports/regulatory.py`), which `MCPFCAHandbookAdapter` implements, offers `search` (breadth, snippets), `get_section` (depth, a whole section in order) and `check_citation` (is the quote word for word, and is the provision binding). Failures raise `MCPToolError`, so an error is never mistaken for a rule. Code should still check every quote after the agent answers.

@@ -24,6 +24,6 @@ def check_citation(reference: str, quote: str, as_of: date | None = None) -> dic
         problems.append(f"the quote is not word for word in {row['citation']}")
     return {
         "ok": not problems, "problems": problems, "reference": row["citation"],
-        "provision_type": row["provision_type"], "binding": row["provision_type"] in store.BINDING,
+        "provision_type": row["provision_type"], "binding": store.is_binding(row["provision_type"]),
         "source": row["source"],
     }  # fmt: skip

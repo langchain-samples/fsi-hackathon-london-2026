@@ -11,6 +11,7 @@ from utils.references import parse_reference, section_of
 
 SNIPPET = 300
 SECTION_LIMIT = 12_000  # characters, about 3,000 tokens
+PROVISION_LIMIT = 40_000  # only a few very long annexes and tables are longer
 
 
 def _date(as_of: str | None) -> date:
@@ -24,7 +25,7 @@ def _describe(row: dict, text: str) -> dict[str, Any]:
         "title": " > ".join([*warning, *row["heading_path"], *([row["subheading"]] if row["subheading"] else [])]),
         "text": text,
         "provision_type": row["provision_type"],
-        "binding": row["provision_type"] in store.BINDING,
+        "binding": store.is_binding(row["provision_type"]),
         "section": row["section"],
         "effective_from": row["effective_from"],
         "effective_to": row["effective_to"],
@@ -105,7 +106,7 @@ def get_fca_section(reference: str, as_of: str | None = None) -> dict[str, Any]:
 
     A section too long to return is cut down, around the provision you asked for, to the group under its sub-heading, or
     to its neighbours. Then `complete` is false and `outline` lists what was left out: call again with a reference from
-    the outline to read it. Provisions are never cut part-way.
+    the outline to read it. Provisions are not cut part-way, except for a few annexes longer than 40,000 characters.
 
     Args:
         reference: A provision such as "SYSC 15A.2.1R", or a section such as "SYSC 15A.2".
@@ -126,9 +127,9 @@ def get_fca_section(reference: str, as_of: str | None = None) -> dict[str, Any]:
     text = "\n".join(r["text"] for r in chosen)
     return {
         "section": section,
-        "complete": len(chosen) == len(rows),
+        "complete": len(chosen) == len(rows) and all(len(r["text"]) <= PROVISION_LIMIT for r in chosen),
         "mode": mode,
-        "results": [_describe(r, r["text"]) for r in chosen],
+        "results": [_describe(r, _capped(r["text"])) for r in chosen],
         "outline": [
             f"{r['citation']}: {(r['subheading'] + ': ') if r['subheading'] else ''}{' '.join(r['text'].split())[:80]}"
             for r in rows
@@ -139,13 +140,19 @@ def get_fca_section(reference: str, as_of: str | None = None) -> dict[str, Any]:
     }
 
 
+def _capped(text: str) -> str:
+    if len(text) <= PROVISION_LIMIT:
+        return text
+    return f"{text[:PROVISION_LIMIT].rsplit(chr(10), 1)[0]}\n[...] {len(text) - PROVISION_LIMIT:,} more characters: see the url"
+
+
 def _suggest(key: str, day: date) -> str:
     """A chapter such as "SYSC 15A" has no text of its own, so list its sections."""
     options = store.sections(key, day)
     return f" Sections in {key}: {', '.join(options)}." if options else ""
 
 
-def check_citation(reference: str, quote: str, as_of: str | None = None) -> dict[str, Any]:
+def check_fca_citation(reference: str, quote: str, as_of: str | None = None) -> dict[str, Any]:
     """Check, without a model, that a provision is in force and that a quote from it is word for word.
 
     Also says whether the provision is binding. Guidance (G) and evidential provisions (E) are not.
@@ -158,4 +165,4 @@ def check_citation(reference: str, quote: str, as_of: str | None = None) -> dict
     return verification.check_citation(reference, quote, _date(as_of))
 
 
-HANDBOOK_TOOLS = [search_fca_handbook, get_fca_section, check_citation]
+HANDBOOK_TOOLS = [search_fca_handbook, get_fca_section, check_fca_citation]
