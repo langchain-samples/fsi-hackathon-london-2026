@@ -117,6 +117,86 @@ sequenceDiagram
     end
 ```
 
+### 2.3 Agentic Architecture: Agents, LLM Steps, Functions & Tools
+
+Which parts reason, which parts are plain code, and which parts are tools. **Today there are no autonomous agents**: LangGraph code fixes the order of steps, the model is called at three points inside them, and code (not the model) calls the MCP tools. The only planned agent is the Module 2 remediation subgraph.
+
+```mermaid
+flowchart TB
+    START(["Caller"]) --> IN["inbound_adapter<br/>FUNCTION (stub)<br/>PR / repo / PDF to AnalysisUnits"]
+
+    subgraph CORE["core_analysis"]
+        TRI("triage_units<br/>LLM STEP 1<br/>relevance + search queries")
+        ROUTE["route_triaged_units<br/>FUNCTION<br/>one parallel branch per relevant unit"]
+
+        subgraph ANALYZE["analyze_unit x N"]
+            RET["Retrieve and dedupe passages<br/>FUNCTION<br/>runs every query from triage"]
+            CHECK("Cross-check unit against rules<br/>LLM STEP 2<br/>drafts Findings")
+        end
+
+        subgraph SYNTH["synthesize_report"]
+            RANK["Dedupe, rank, assign IDs, verdict<br/>FUNCTION"]
+            SUM("Executive summary<br/>LLM STEP 3<br/>cannot change the verdict")
+            REPORT["Assemble FindingsReport<br/>FUNCTION"]
+        end
+    end
+
+    subgraph TOOLS["MCP tools"]
+        FCA[/"FCA Handbook search<br/>TOOL<br/>search_fca_handbook"/]
+        CCA[/"CCA search<br/>TOOL<br/>query_consumer_credit_act"/]
+        CCADOC[/"CCA document fetch<br/>TOOL<br/>get_consumer_credit_act_document"/]
+    end
+
+    GATE{"human_review_gate<br/>FUNCTION + optional HUMAN<br/>approve / filter / reject"}
+
+    subgraph OUT["outbound_adapter"]
+        OUTPR["Module 1: PR comments<br/>FUNCTION (stub)"]
+        OUTREPO["Module 2: remediation<br/>FUNCTION (stub today)<br/>AGENT (planned)"]
+        OUTPDF["Module 3: PDF report<br/>FUNCTION (stub)"]
+    end
+
+    AGTOOLS[/"TOOLS (planned)<br/>read_file, edit_file, run_tests,<br/>git_checkout_commit, gh pr create"/]
+    DONE(["DeliverableResult"])
+
+    IN --> TRI --> ROUTE
+    ROUTE -->|"relevant units"| RET
+    ROUTE -->|"no relevant units"| RANK
+    RET --> CHECK --> RANK --> SUM --> REPORT --> GATE
+    RET <-->|"code calls tools"| TOOLS
+    GATE -->|"approved or filtered"| OUTPR & OUTREPO & OUTPDF
+    GATE -->|"rejected"| DONE
+    OUTREPO <-.->|"agent chooses (planned)"| AGTOOLS
+    OUTPR & OUTREPO & OUTPDF --> DONE
+
+    classDef fn fill:#e5e7eb,stroke:#4b5563,color:#111827
+    classDef llm fill:#dbeafe,stroke:#1d4ed8,color:#111827
+    classDef tool fill:#dcfce7,stroke:#15803d,color:#111827
+    classDef human fill:#fef3c7,stroke:#b45309,color:#111827
+    classDef agent fill:#f3e8ff,stroke:#7e22ce,color:#111827,stroke-dasharray:6 4
+    classDef planned fill:#dcfce7,stroke:#15803d,color:#111827,stroke-dasharray:6 4
+    class IN,ROUTE,RET,RANK,REPORT,OUTPR,OUTPDF fn
+    class TRI,CHECK,SUM llm
+    class FCA,CCA,CCADOC tool
+    class GATE human
+    class OUTREPO agent
+    class AGTOOLS planned
+```
+
+**Legend:** grey = deterministic function, blue (rounded) = LLM step, green (slanted) = tool, amber = human decision, purple = planned agent. Dashed outline = not built yet, at least in part. Each pipeline uses one outbound module. The MCP tools are mock adapters unless `FCA_MCP_URL` and `CCA_MCP_URL` are set.
+
+| Kind | What it means here | Parts |
+|---|---|---|
+| **Agent** | A model chooses its own tools and next step, in a loop | None today. Planned: Module 2 remediation |
+| **LLM step** | One model call with a fixed prompt and no tools. Steps 1 and 2 must return a fixed schema; step 3 returns text | `triage_units`, the cross-check in `analyze_unit`, the summary in `synthesize_report` |
+| **Function** | Plain code, no model | Inbound adapters, routing, retrieval, deduplication, ranking, verdict, report assembly, outbound adapters |
+| **Tool** | An external capability, called over MCP. Code calls it using queries written by LLM step 1 | FCA Handbook search, CCA search, CCA document fetch |
+| **Human** | A person decides. Off by default (`require_human_approval=False`), so reports are auto-approved | `human_review_gate` |
+
+- The model's influence on retrieval is limited to the queries and CCA sections it writes in LLM step 1. It cannot search again after seeing the results.
+- The verdict is computed by code (`_compute_verdict`), but from severities and statuses the model assigns in LLM step 2.
+- Citations and quotes written by the model are not yet checked against the retrieved passages.
+- The FCA adapter also supports fetching one rule (`get_fca_rule`), but no core node calls it yet.
+
 ---
 
 ## 3. Domain Model & State Contracts
