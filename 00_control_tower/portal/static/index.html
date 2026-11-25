@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compliance Control Tower</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #151b23; --panel2: #1b222c; --line: #2a3340; --ink: #e6edf3; --quiet: #8b98a8;
+    --reg: #a78bfa; --kyc: #38bdf8; --tm: #f59e0b; --good: #34d399; --warn: #fbbf24; --bad: #f87171; --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  header .sub { color: var(--quiet); font-size: 13px; }
+  .badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--quiet); }
+  .badge.offline { color: var(--warn); border-color: var(--warn); }
+  .badge.live { color: var(--good); border-color: var(--good); }
+  .spacer { flex: 1; }
+  main { padding: 16px 24px; }
+  .tabs { display: flex; gap: 4px; padding: 0 24px; border-bottom: 1px solid var(--line); }
+  .tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--quiet); padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  .tab.on { color: var(--ink); border-bottom-color: var(--accent); } .tab .n { background: var(--warn); color: #3a2a00; border-radius: 999px; font-size: 11px; padding: 1px 6px; margin-left: 6px; }
+  .view { display: none; } .view.on { display: grid; gap: 16px; }
+  .g-dash { grid-template-columns: 1fr 380px; } .g-split { grid-template-columns: 1fr 1fr; } .g-kyc { grid-template-columns: 1.3fr 1fr; }
+  @media (max-width: 1000px) { .g-dash, .g-split, .g-kyc { grid-template-columns: 1fr; } }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; }
+  .kpi b { display: block; font-size: 26px; line-height: 1.1; } .kpi span { color: var(--quiet); font-size: 12px; } .kpi.hot b { color: var(--warn); }
+  .scan { background: var(--accent); color: #06203f; border: 0; border-radius: 8px; padding: 8px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+  .scan:disabled { opacity: .5; cursor: wait; }
+  .action { background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  .action .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .action .subj { font-weight: 600; }
+  .action ul { margin: 6px 0 8px; padding-left: 18px; color: var(--quiet); font-size: 12.5px; }
+  .action .row { display: flex; gap: 8px; } .action input { flex: 1; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+  .action .btn { flex: none; padding: 7px 16px; }
+  tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--panel2); } tr.sel td { background: var(--panel2); }
+  .p-tower { background: #60a5fa22; color: var(--accent); }
+  pre.brief { white-space: pre-wrap; font: 12.5px/1.5 inherit; max-height: 420px; overflow: auto; margin: 0; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+  .b-sum { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-bottom: 10px; }
+  .b-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .b-chip { background: none; border: 1px solid var(--line); color: var(--quiet); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .b-chip.on { border-color: var(--accent); color: var(--ink); background: var(--panel2); }
+  .b-wrap { max-height: 520px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .b-wrap td { vertical-align: top; } .b-wrap th { position: sticky; top: 0; background: var(--panel); }
+  .b-src { white-space: nowrap; color: var(--reg); font-size: 12px; }
+  .b-app { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
+  .b-app.yes { color: var(--good); background: #34d39922; } .b-app.no { color: var(--quiet); background: var(--panel2); } .b-app.unclear { color: var(--warn); background: #fbbf2422; }
+  .b-due { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .b-act { color: var(--quiet); font-size: 12.5px; margin-top: 4px; }
+  .rv { font-size: 13px; line-height: 1.5; }
+  .rv-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rv-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink); }
+  .rv-tag.own { font-weight: 400; color: var(--quiet); }
+  .rv-tag.imp-high { color: var(--bad); border-color: var(--bad); } .rv-tag.imp-medium { color: var(--warn); border-color: var(--warn); }
+  .rv-sec { margin-bottom: 10px; } .rv-sec > b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--reg); margin-bottom: 2px; }
+  .rv-sec p { margin: 0; } .rv ul { margin: 4px 0 0; padding-left: 18px; }
+  .rv-tier { margin: 4px 0 6px; } .rv-tier > b { font-size: 12px; }
+  .rv-dates { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+  .rv-date { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; display: grid; }
+  .rv-date b { font-size: 12.5px; font-variant-numeric: tabular-nums; } .rv-date span { font-size: 11px; color: var(--quiet); }
+  .rv-journey { border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 13px; }
+  .rv-journey.on { background: #f59e0b1a; border: 1px solid var(--tm); } .rv-journey.off { background: #34d3991a; border: 1px solid var(--good); }
+  .rv-changes { margin-bottom: 10px; }
+  .action.reg-action { border-left-color: var(--reg); }
+  .st-approved { color: var(--good); } .st-rejected { color: var(--bad); } .st-pending_review { color: var(--warn); } .st-not_screened { color: var(--quiet); }
+  .match { color: var(--good); } .miss { color: var(--bad); font-weight: 600; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--quiet); margin: 0 0 10px; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .step { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; background: var(--panel2); color: var(--ink);
+          border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 8px; cursor: pointer; font: inherit; }
+  .step:hover { border-color: var(--accent); }
+  .step:disabled { opacity: .5; cursor: wait; }
+  .step .n { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--line); }
+  .step.done .n { background: var(--good); color: #062; }
+  .step small { display: block; color: var(--quiet); font-size: 12px; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; margin-right: 4px; }
+  .p-reg { background: #a78bfa22; color: var(--reg); } .p-kyc { background: #38bdf822; color: var(--kyc); } .p-tm { background: #f59e0b22; color: var(--tm); }
+  .para { font-size: 11px; color: var(--accent); border: 1px solid #60a5fa55; border-radius: 4px; padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+  .cust { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .cust-head { display: flex; align-items: center; gap: 12px; }
+  .cust-head .name { font-size: 17px; font-weight: 600; }
+  .rating { font-weight: 800; font-size: 13px; padding: 4px 10px; border-radius: 6px; letter-spacing: .6px; transition: all .4s; }
+  .r-low { background: #34d39922; color: var(--good); } .r-medium { background: #fbbf2422; color: var(--warn); }
+  .r-high { background: #f8717122; color: var(--bad); box-shadow: 0 0 0 1px var(--bad) inset; } .r-none { background: var(--line); color: var(--quiet); }
+  .reasons { margin: 6px 0 0; padding-left: 18px; color: var(--ink); }
+  .reasons li { margin: 2px 0; }
+  .meta { color: var(--quiet); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--quiet); font-weight: 500; font-size: 12px; padding: 6px 6px; border-bottom: 1px solid var(--line); }
+  td { padding: 6px; border-bottom: 1px solid #222a35; vertical-align: top; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .d-approve { color: var(--good); font-weight: 600; } .d-block { color: var(--bad); font-weight: 600; } .d-pending { color: var(--warn); font-weight: 600; }
+  .by { color: var(--quiet); font-size: 11px; }
+  .alert-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-left: 6px; }
+  .flag { background: #f8717118; border: 1px solid var(--bad); color: var(--bad); padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .changes td:first-child { color: var(--quiet); }
+  .after { color: var(--accent); font-weight: 600; }
+  .review { background: var(--panel2); border: 1px solid var(--warn); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+  .review .q { font-weight: 600; margin: 4px 0 6px; }
+  .review ul { margin: 0 0 8px; padding-left: 18px; color: var(--quiet); font-size: 12px; }
+  .review input { width: 100%; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; font: inherit; }
+  .btns { display: flex; gap: 8px; }
+  .btn { flex: 1; border: 0; border-radius: 6px; padding: 7px; font-weight: 600; cursor: pointer; font: inherit; font-weight: 600; }
+  .btn.ok { background: var(--good); color: #052e1c; } .btn.no { background: var(--bad); color: #3b0909; }
+  .feed { max-height: 360px; overflow: auto; font-size: 12.5px; }
+  .ev { padding: 6px 0; border-bottom: 1px solid #222a35; }
+  .ev .t { color: var(--quiet); font-size: 11px; }
+  .empty { color: var(--quiet); font-size: 13px; }
+  .status { font-size: 12px; color: var(--warn); }
+  .err { color: var(--bad); font-size: 12px; }
+  a { color: var(--accent); }
+  .ghost { background: none; border: 1px solid var(--line); color: var(--quiet); border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; }
+  .clients { max-height: 430px; overflow: auto; margin: 0 -6px; }
+  .cl { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; color: var(--ink); border: 1px solid transparent; border-radius: 6px; padding: 6px; cursor: pointer; font: inherit; }
+  .cl:hover { background: var(--panel2); } .cl.sel { background: var(--panel2); border-color: var(--accent); }
+  .cl .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .cl .id { color: var(--quiet); font-size: 11px; }
+  .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+  .dot.low { background: var(--good); } .dot.medium { background: var(--warn); } .dot.high { background: var(--bad); }
+  .search, select { width: 100%; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; font: inherit; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .act { background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; font: inherit; font-weight: 600; }
+  .act:hover:not(:disabled) { border-color: var(--accent); } .act:disabled { opacity: .45; cursor: not-allowed; }
+  .act.next { border-color: var(--accent); color: var(--accent); }
+  .next-line { font-size: 13px; } .next-line b { color: var(--accent); }
+  .stage { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; letter-spacing: .5px; text-transform: uppercase; border: 1px solid var(--line); color: var(--quiet); }
+  .s-active { color: var(--good); border-color: var(--good); } .s-under_review { color: var(--warn); border-color: var(--warn); }
+  .s-not_onboarded, .s-onboarding { color: var(--quiet); } .s-reassessment_due { color: var(--reg); border-color: var(--reg); } .s-refresh_due { color: var(--bad); border-color: var(--bad); }
+  .hist { margin: 0; padding: 8px 10px; list-style: none; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; max-height: 150px; overflow: auto; font-size: 12.5px; }
+  .hist li { padding: 2px 0; } .hist li.life { color: var(--quiet); font-style: italic; }
+  .hist-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--quiet); }
+  .chat { max-height: 320px; overflow: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+  .msg { padding: 8px 10px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.user { background: #60a5fa22; align-self: flex-end; max-width: 90%; } .msg.agent { background: var(--panel2); border: 1px solid var(--line); }
+  .msg.error { border: 1px solid var(--bad); color: var(--bad); }
+  .chip { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 4px; margin: 0 4px 4px 0; border: 1px solid var(--line); color: var(--quiet); }
+  .chip.skill { color: var(--reg); border-color: var(--reg); }
+  .ask { display: flex; gap: 6px; } .ask input { flex: 1; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit; }
+  .ask button { background: var(--accent); color: #06203f; border: 0; border-radius: 6px; padding: 0 12px; font: inherit; font-weight: 600; cursor: pointer; }
+  .ask button:disabled, .ask input:disabled { opacity: .5; }
+  .thresholds { display: flex; gap: 12px; flex-wrap: wrap; }
+  .th { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  .th b { font-size: 15px; } .th.changed { border-color: var(--accent); }
+  /* Transaction monitoring tab */
+  .g-tm { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; } @media (max-width: 1100px) { .g-tm { grid-template-columns: 1fr; } }
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+  .fs { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; font-size: 12px; min-width: 96px; }
+  .fs b { display: block; font-size: 12.5px; } .fs span { color: var(--quiet); font-size: 11px; }
+  .fs.code { border-top: 3px solid var(--accent); } .fs.model { border-top: 3px solid var(--reg); } .fs.person { border-top: 3px solid var(--warn); }
+  .arrow { color: var(--quiet); align-self: center; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--quiet); }
+  .legend i { display: inline-block; width: 10px; height: 3px; margin-right: 5px; vertical-align: middle; }
+  .band { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; letter-spacing: .4px; text-transform: uppercase; }
+  .b-low { background: #34d39922; color: var(--good); } .b-medium { background: #fbbf2422; color: var(--warn); } .b-high { background: #f8717122; color: var(--bad); }
+  .bar { position: relative; height: 5px; background: var(--line); border-radius: 3px; width: 84px; margin-top: 5px; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; } .bar s { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--quiet); }
+  .rule { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #60a5fa18; color: var(--accent); margin: 0 3px 3px 0; white-space: nowrap; cursor: help; }
+  .ns { font-size: 12px; font-weight: 600; } .ns-close_explained { color: var(--good); } .ns-request_information { color: var(--warn); }
+  .ns-block_and_escalate { color: var(--bad); } .ns-refer_mlro { color: #fff; background: #b91c1c; padding: 1px 6px; border-radius: 4px; }
+  .audit-pass { color: var(--good); font-weight: 600; } .audit-return { color: var(--bad); font-weight: 600; }
+  .score { font-weight: 800; font-size: 12px; padding: 4px 10px; border-radius: 6px; letter-spacing: .6px; }
+  .sc-green { background: #34d39922; color: var(--good); } .sc-amber { background: #fbbf2422; color: var(--warn); } .sc-red { background: #f8717122; color: var(--bad); box-shadow: 0 0 0 1px var(--bad) inset; }
+  tr.tx { cursor: pointer; } tr.tx:hover td, tr.tx.open td { background: var(--panel2); }
+  tr.more > td { background: #0f141b; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .more-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } @media (max-width: 1000px) { .more-grid { grid-template-columns: 1fr; } }
+  .more-grid h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--quiet); margin: 0 0 6px; font-weight: 600; }
+  .more-grid ul { margin: 0; padding-left: 18px; } .more-grid li { margin: 2px 0; }
+  .ev-ok { color: var(--good); } .ev-bad { color: var(--bad); font-weight: 700; }
+  .src { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--quiet); }
+  .preview { font-size: 10px; color: var(--quiet); border: 1px dashed var(--line); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .metric { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .metric b { display: block; font-size: 20px; line-height: 1.2; } .metric span { color: var(--quiet); font-size: 11.5px; } .metric.ok b { color: var(--good); } .metric.bad b { color: var(--bad); }
+  .rs-tabs { display: flex; gap: 6px; margin-bottom: 8px; } .rs-tabs button { background: none; border: 1px solid var(--line); color: var(--quiet); border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+  .rs-tabs button.on { border-color: var(--accent); color: var(--ink); }
+  .cut { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 0; font-size: 12px; } .cut div { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--quiet); margin: 6px 0 10px; }
+  .chips > span { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; } .chips > span.hot { border-color: var(--accent); color: var(--ink); }
+  .decide { background: var(--panel2); border: 1px solid var(--warn); border-radius: 8px; padding: 10px; margin-top: 10px; }
+  .decide .row { display: flex; gap: 8px; } .decide input { flex: 1; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+  .decide .btn { flex: none; padding: 7px 16px; }
+</style>
+<link rel="stylesheet" href="/kyc/kyc.css">
+</head>
+<body>
+<header>
+  <h1>Compliance Control Tower</h1>
+  <span class="sub">Harbour Mutual Bank · one supervisor over KYC, transaction monitoring and regulatory change</span>
+  <span id="mode" class="badge">…</span>
+  <span class="spacer"></span>
+  <span id="status" class="status"></span>
+  <a id="ls" href="https://smith.langchain.com" target="_blank" rel="noopener">Open LangSmith</a>
+  <button class="ghost" onclick="reset()">Reset</button>
+</header>
+<nav class="tabs">
+  <button class="tab" data-tab="dash">Dashboard<span class="n" id="n-dash" hidden></span></button>
+  <button class="tab" data-tab="kyc">KYC</button>
+  <button class="tab" data-tab="tm">Transaction monitoring</button>
+  <button class="tab" data-tab="reg">Regulatory change</button>
+  <button class="tab" data-tab="bank">Our bank</button>
+</nav>
+<main>
+  <div id="err" class="err" style="margin-bottom:8px"></div>
+
+  <section class="view g-dash" id="v-dash">
+    <div class="col">
+      <div class="kpis" id="kpis"></div>
+      <div class="panel">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <h2 style="margin:0">Actions waiting for you</h2><span class="spacer"></span>
+          <span class="meta">Scan screens new applications and monitors onboarded clients' payments</span>
+          <button class="scan" id="scan" onclick="post('/api/scan')">Scan</button>
+        </div>
+        <div id="actions" class="empty">Nothing waiting. Press Scan to look for new work.</div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="panel">
+        <h2>Ask the control tower</h2>
+        <div id="chat" class="chat"><div class="empty">Ask the supervisor about any client or regulation, for example "Where is Tomás Ferreira (CUST-026) and what is next?" or "Which clients does PS26-7 affect?" It explains and prepares; decisions are made in the action queue.</div></div>
+        <form class="ask" onsubmit="ask(event)"><input id="q" placeholder="Ask about a client or a regulation" autocomplete="off"><button id="send">Ask</button></form>
+      </div>
+      <div class="panel"><h2>Activity</h2><div id="feed" class="feed"></div></div>
+    </div>
+  </section>
+
+  <section class="view g-kyc" id="v-kyc">
+    <div class="col">
+      <div class="panel"><h2>KYC process</h2><div id="kyc-flow" class="empty">Loading…</div></div>
+      <div class="panel">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <h2 style="margin:0">Cases</h2><span class="spacer"></span><span id="kyc-bulk" class="acts"></span></div>
+        <div id="kyc-filters" class="kyc-filters"></div>
+        <input id="kyc-find" class="search" placeholder="Search by name or ID" oninput="shown['#kyc-cases'] = null; kycCases()">
+        <div id="kyc-cases" class="kyc-cases"></div>
+      </div>
+      <details class="panel"><summary>Watchlists used for screening</summary>
+        <div class="g-split" style="display:grid;gap:16px"><div><h2>PEP list</h2><div id="pep"></div></div>
+          <div><h2>Sanctions list</h2><div id="sanctions"></div></div></div></details>
+    </div>
+    <div class="col" id="kyc-case"></div>
+  </section>
+
+  <section class="view" id="v-tm">
+    <div class="panel">
+      <h2>How a payment is decided</h2>
+      <div id="tm-flow"></div>
+    </div>
+    <div class="g-tm">
+      <div class="panel"><h2>Rule set</h2><div id="tm-rules"></div></div>
+      <div class="panel"><h2>Controls, measured</h2><div id="tm-metrics"></div></div>
+    </div>
+    <div id="tm"></div>
+  </section>
+
+  <section class="view g-split" id="v-reg">
+    <div class="col">
+      <div class="panel">
+        <h2>Regulatory change manager</h2>
+        <select id="doc" onchange="paintBrief()"></select>
+        <button class="act" id="brief" style="width:100%" onclick="post('/api/regulation/' + $('#doc').value)">Brief this document for our firm</button>
+      </div>
+      <div class="panel"><h2>Internal: our firm</h2><div id="firm"></div></div>
+      <div class="panel"><h2>Internal: the brief (obligations for the firm)</h2><div id="briefText" class="empty">No document briefed yet.</div></div>
+    </div>
+    <div class="col">
+      <div class="panel"><h2>Clients: controls that change</h2><div id="policy" class="empty">Baseline: the default controls. No regulatory change is live.</div></div>
+      <div class="panel"><h2>Clients: who is affected</h2><div id="affected" class="empty">No client is out of date with the live policy.</div></div>
+    </div>
+  </section>
+
+  <section class="view g-split" id="v-bank">
+    <div class="col">
+      <div class="panel"><h2>Gaps in the bank's records</h2><div id="bank-gaps" class="empty">Loading…</div></div>
+      <div class="panel"><h2>The bank</h2><div id="bank-profile"></div></div>
+      <div class="panel"><h2>Senior managers</h2><div id="bank-people"></div></div>
+      <div class="panel"><h2>Important business services</h2><div id="bank-services"></div></div>
+      <div class="panel"><h2>Third parties and contracts</h2><div id="bank-contracts"></div></div>
+    </div>
+    <div class="col">
+      <div class="panel"><h2>Regulation library</h2><div id="bank-library"></div></div>
+      <div class="panel"><h2>Clients</h2><div id="bank-clients"></div></div>
+      <div class="panel"><h2>Controls in force</h2><div id="bank-controls"></div></div>
+      <div class="meta">Read-only. This is what the agents know about the bank: the 03 firm data, the KYC client files and the live policy. Synthetic data.</div>
+    </div>
+  </section>
+</main>
+<script src="/kyc/kyc.js"></script>
+<script>
+let lastSeq = 0, state = null, ref = null, shown = {};
+let tab = localStorage.getItem("tab") || "dash", selected = localStorage.getItem("client") || "";
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const para = p => p ? `<span class="para">¶ ${esc(p)}</span>` : "";
+const words = s => String(s).replace(/_/g, " ");
+// Re-render a block only when its data changed, so typing in a note or scrolling a list is not wiped by the poll.
+const paint = (sel, key, html) => { if (shown[sel] !== key) { shown[sel] = key; $(sel).innerHTML = html; return true; } return false; };
+const fieldNames = {
+  edd_for_pep_family_and_associates: "EDD for PEP family and close associates", high_risk_countries: "High-risk third countries",
+  source_of_funds_threshold_gbp: "Source-of-funds evidence above (£)", high_risk_confidence_threshold: "High-risk: human below confidence",
+  high_risk_review_score: "High-risk: human at risk score ≥", high_risk_merchant_categories: "High-risk merchant categories",
+  high_risk_merchant_limit_gbp: "High-risk merchant limit (£)", alerts_for_kyc_refresh: "Alerts that trigger KYC refresh",
+  alert_window_days: "Alert window (days)", edd_for_peps: "EDD for PEPs",
+};
+// The 03 agent returns a Brief (JSON): a summary, then one item per obligation with what it means for the firm.
+// Every briefed regulation keeps its own brief: the panel shows the one picked in the document list.
+let briefFilter = "all";
+function setBriefFilter(f) { briefFilter = f; paintBrief(); }
+function showBrief(doc) { $("#doc").value = doc; briefFilter = "all"; paintBrief(); }
+function paintBrief() {
+  if (!state) return;
+  const briefs = state.briefs || {}, doc = $("#doc").value, b = briefs[doc], done = Object.keys(briefs);
+  const switcher = done.length ? `<div class="b-chips">${done.map(d => `<button class="b-chip${d === doc ? " on" : ""}" onclick="showBrief('${esc(d)}')">${esc(d)}: ${esc(briefs[d].title)}</button>`).join("")}</div>` : "";
+  paint("#briefText", JSON.stringify([doc, b, briefFilter, done]), switcher + (b ? renderBrief(b)
+    : `<span class="empty">${esc(doc)} has not been briefed yet. Press "Brief this document for our firm".</span>`));
+}
+function renderBrief(b) {
+  let data = null;
+  try { data = JSON.parse(b.text); } catch (e) { /* an older plain-text brief */ }
+  const head = `<div style="margin-bottom:8px"><b style="font-size:15px">${esc(b.title || (data && data.title) || b.document)}</b>
+    <div class="meta">${esc(b.document)}, briefed for the bank by the regulatory agent (project 03)</div></div>`;
+  if (!data || !Array.isArray(data.items)) return head + `<pre class="brief">${esc(b.text)}</pre>`;
+  const items = data.items, count = k => items.filter(i => i.applies_to_firm === k).length;
+  const filters = [["all", `All ${items.length}`], ["yes", `Applies ${count("yes")}`], ["unclear", `Check ${count("unclear")}`],
+                   ["no", `Does not apply ${count("no")}`], ["due", `With a deadline ${items.filter(i => i.firm_deadline).length}`]];
+  const shownItems = items.filter(i => briefFilter === "all" || (briefFilter === "due" ? i.firm_deadline : i.applies_to_firm === briefFilter));
+  const rows = shownItems.map(i => `<tr>
+      <td class="meta">${esc(i.id)}</td>
+      <td>${esc(i.summary)}${i.firm_action ? `<div class="b-act">${esc(i.firm_action)}</div>` : ""}</td>
+      <td class="b-src">${esc(paraList(i.source))}</td>
+      <td>${i.applies_to_firm ? `<span class="b-app ${esc(i.applies_to_firm)}">${i.applies_to_firm === "unclear" ? "check" : esc(i.applies_to_firm)}</span>` : ""}</td>
+      <td class="b-due">${esc(i.firm_deadline || "")}</td></tr>`).join("");
+  return head + (data.review ? renderReview(data, false) + `<div class="hist-title" style="margin:12px 0 6px">Every obligation</div>`
+                             : `<div class="b-sum"><b>${esc(data.title)}</b><br>${esc(data.summary)}</div>`)
+    + `<div class="b-chips">${filters.map(([k, label]) => `<button class="b-chip${briefFilter === k ? " on" : ""}" onclick="setBriefFilter('${k}')">${esc(label)}</button>`).join("")}</div>`
+    + `<div class="b-wrap"><table><thead><tr><th>#</th><th>Obligation and what the firm must do</th><th>Source</th><th>Firm</th><th>Firm deadline</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">Nothing in this view.</td></tr>'}</tbody></table></div>`;
+}
+const fmt = v => typeof v === "number" ? v.toLocaleString() : Array.isArray(v) ? (v.length ? v.join(", ") : "none") : (v === null ? "none" : v === true ? "yes" : v === false ? "no" : v);
+
+function show(t) {
+  tab = t; localStorage.setItem("tab", t);
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  document.querySelectorAll("main > .view").forEach(v => v.classList.toggle("on", v.id === "v-" + t));
+}
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => show(b.dataset.tab));
+function pick(id) { selected = id; localStorage.setItem("client", id); shown = {}; show("kyc"); poll(); }
+
+async function post(url, body) {
+  const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  $("#err").textContent = r.ok ? "" : (await r.json()).detail;
+  poll();
+}
+const decide = (id, decision) => post(`/api/action/${encodeURIComponent(id)}`, {decision, note: document.getElementById("note-" + id)?.value || ""});
+async function reset() { await fetch("/api/reset", {method: "POST"}); lastSeq = 0; shown = {}; $("#feed").innerHTML = ""; poll(); }
+async function ask(ev) {
+  ev.preventDefault();
+  const q = $("#q").value.trim(); if (!q) return;
+  $("#q").value = ""; post("/api/chat", {message: q, customer_id: ""});
+}
+
+// --- the 03 reviewer summary (sections A to E, MillTech horizon-scanning format) -----------------------------
+const paraList = s => { const p = [...new Set(String(s || "").match(/\d+\.\d+/g) || [])]; return p.length ? "¶ " + p.join(", ") : String(s || ""); };
+const src = s => s ? `<span class="b-src">${esc(paraList(s))}</span>` : "";
+function renderReview(rv, compact) {
+  const r = rv && rv.review;
+  if (!r) return "";
+  const act = a => `<li>${esc(a.action)} <span class="meta">· ${esc(a.owner)}${a.deadline ? " · by " + esc(a.deadline) : ""}</span> ${src(a.source)}</li>`;
+  const tier = (label, list) => list && list.length ? `<div class="rv-tier"><b>${label}</b><ul>${list.map(act).join("")}</ul></div>` : "";
+  const dates = (rv.key_dates || []).slice(0, compact ? 4 : 12);
+  const c = rv.counts;
+  const head = `<div class="rv-tags"><span class="rv-tag">${esc(r.classification)}</span>
+      <span class="rv-tag imp-${esc(String(r.impact).toLowerCase())}">${esc(r.impact)} impact</span>
+      ${r.effective_date ? `<span class="rv-tag">In force ${esc(r.effective_date)}</span>` : ""}
+      ${(r.owners || []).map(o => `<span class="rv-tag own">${esc(o)}</span>`).join("")}</div>
+    <div class="meta" style="margin:4px 0 8px">${esc(r.impact_reason)}</div>`;
+  const strip = dates.length ? `<div class="rv-dates">${dates.map(d => `<div class="rv-date"><b>${esc(d.date)}</b><span>${d.item_ids.length} item${d.item_ids.length > 1 ? "s" : ""} · ${esc(paraList(d.sources.join(" ")))}</span></div>`).join("")}</div>` : "";
+  const counts = c ? `<div class="meta" style="margin-bottom:8px">${c.total} obligations: ${c.applies} apply, ${c.check} to check, ${c.does_not_apply} do not apply, ${c.with_deadline} with a firm deadline</div>` : "";
+  if (compact) {
+    return `<div class="rv">${head}<div class="rv-sec"><b>A. Summary</b><p>${esc(r.a_summary)}</p></div>
+      <div class="rv-sec"><b>C. Impact</b><p>${esc(r.c_impact)}</p></div>
+      ${tier("D. Immediate actions", r.d_immediate)}${strip}
+      <div class="meta">${(r.e_open_questions || []).length} open question(s). <a href="#" onclick="show('reg');return false">Read the full A–E summary and every obligation</a></div></div>`;
+  }
+  return `<div class="rv">${head}${counts}
+    <div class="rv-sec"><b>A. Summary</b><p>${esc(r.a_summary)}</p></div>
+    <div class="rv-sec"><b>B. Applicability to the bank</b><p>${esc(r.b_applicability)}</p></div>
+    <div class="rv-sec"><b>C. Impact</b><p>${esc(r.c_impact)}</p></div>
+    <div class="rv-sec"><b>D. Recommended actions</b>${tier("Immediate", r.d_immediate)}${tier("Near-term", r.d_near_term)}${tier("Monitoring", r.d_monitoring)}</div>
+    ${strip ? `<div class="rv-sec"><b>Firm deadlines</b>${strip}</div>` : ""}
+    <div class="rv-sec"><b>E. Key takeaways</b><ul>${(r.e_takeaways || []).map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>
+    ${(r.e_open_questions || []).length ? `<div class="rv-sec"><b>Open questions</b><ul>${r.e_open_questions.map(q => `<li>${esc(q.question)} <span class="meta">· ${esc(q.owner)}</span> ${src(q.source)}</li>`).join("")}</ul></div>` : ""}
+  </div>`;
+}
+
+function renderRegAction(a) {
+  const signOff = a.journey === "sign_off";
+  const banner = signOff
+    ? `<div class="rv-journey off"><b>Sign-off only.</b> This brief changes no KYC or monitoring control. Signing off records that the bank has reviewed it; the actions below go to their owners.</div>`
+    : `<div class="rv-journey on"><b>Control change.</b> The tower found ${a.changes.length} gap(s) between the bank's live controls and what the document requires. Nothing changes until you approve.</div>`;
+  const table = !signOff && a.changes.length ? `<table class="rv-changes"><thead><tr><th>Control</th><th>Today</th><th>Required</th><th>¶</th></tr></thead><tbody>${a.changes.map(c =>
+      `<tr><td>${esc(fieldNames[c.field] || words(c.field))}</td><td class="meta">${esc(fmt(c.before))}</td><td><b>${esc(fmt(c.after))}</b></td><td class="b-src">${esc(c.paragraph)}</td></tr>`).join("")}</tbody></table>` : "";
+  return `<div class="action reg-action"><div class="top"><span class="pill p-reg">REG</span><b>${esc(a.kind)}</b>
+      <span class="subj">${esc(a.subject)}${a.review && a.review.title ? ` · <span class="meta">${esc(a.review.title)}</span>` : ""}</span>
+      <span class="spacer"></span><span class="meta">${esc(a.id)}</span></div>
+    ${banner}${table}${renderReview(a.review, true)}
+    <div class="row"><input id="note-${esc(a.id)}" placeholder="Reviewer note (optional)">
+      <button class="btn ok" onclick="decide('${esc(a.id)}','approve')">${esc(a.approve_label)}</button>
+      <button class="btn no" onclick="decide('${esc(a.id)}','reject')">${esc(a.reject_label)}</button></div></div>`;
+}
+
+// --- Our bank: everything the agents know about the bank, read-only -------------------------------------------
+let bank = null;
+async function loadBank() {
+  bank = await (await fetch("/api/bank")).json();
+  const b = bank, f = b.firm, s = b.small_firm_test || {};
+  const yesNo = v => v ? "yes" : "no";
+  paint("#bank-gaps", JSON.stringify(b.gaps), b.gaps.length ? b.gaps.map(g => `<div class="flag">${esc(g)}</div>`).join("") : '<span class="empty">No gaps recorded.</span>');
+  paint("#bank-profile", JSON.stringify([f, s]), `<div><b>${esc(f.name)}</b> <span class="meta">${esc(f.firm_id)} · ${esc(f.type)}</span></div>
+    <div class="thresholds" style="margin:8px 0"><div class="th"><b>${Number(f.customers).toLocaleString()}</b><div class="meta">customers</div></div>
+      <div class="th"><b>${esc(f.total_assets)}</b><div class="meta">total assets</div></div>
+      <div class="th"><b>${s.is_small_firm === false ? "No" : s.is_small_firm ? "Yes" : "?"}</b><div class="meta">small firm (¶ ${esc(s.paragraph || "–")})</div></div></div>
+    <div class="meta">${esc(s.explanation || "")}</div><div class="meta" style="margin-top:6px">${esc(f.notes || "")}</div>`);
+  paint("#bank-people", JSON.stringify(b.senior_managers), `<table><thead><tr><th>Senior manager for</th><th>Named</th></tr></thead><tbody>${b.senior_managers.map(m =>
+    `<tr><td>${esc(m.role)}</td><td>${m.name ? esc(m.name) : '<span class="miss">Not named</span>'}</td></tr>`).join("")}</tbody></table>`);
+  paint("#bank-services", JSON.stringify([b.business_services, b.shared_providers]), `<table><thead><tr><th>Business service</th><th>Important</th><th>Depends on</th></tr></thead><tbody>${b.business_services.map(x =>
+    `<tr><td>${esc(x.name)}</td><td>${yesNo(x.important)}</td><td>${esc(x.providers.join(", "))}</td></tr>`).join("")}</tbody></table>
+    ${b.shared_providers.map(p => `<div class="flag" style="margin-top:8px">Concentration: ${esc(p.explanation)}</div>`).join("")}`);
+  paint("#bank-contracts", JSON.stringify(b.contracts), `<table><thead><tr><th>Provider</th><th>Service</th><th>Supports</th><th>Contract end</th><th>Material</th></tr></thead><tbody>${b.contracts.map(p =>
+    `<tr><td>${esc(p.name)}</td><td>${esc(p.service)}</td><td>${esc((p.supports || []).join(", ") || "–")}</td><td class="b-due">${esc(p.contract_end)}</td><td>${yesNo(p.material)}</td></tr>`).join("")}</tbody></table>`);
+  const kv = o => Object.entries(o).map(([k, v]) => `<div class="th"><b>${v}</b><div class="meta">${esc(words(k))}</div></div>`).join("") || '<span class="empty">None yet. Press Scan on the Dashboard.</span>';
+  paint("#bank-clients", JSON.stringify(b.clients), `<div class="meta" style="margin-bottom:6px">${b.clients.applicants} applications on record, ${b.clients.on_file} client files. <a href="#" onclick="show('kyc');return false">Open the KYC register</a></div>
+    <div class="hist-title">By risk rating</div><div class="thresholds" style="margin:6px 0 10px">${kv(b.clients.by_rating)}</div>
+    <div class="hist-title">By lifecycle stage</div><div class="thresholds" style="margin-top:6px">${kv(b.clients.by_stage)}</div>`);
+  paint("#bank-controls", JSON.stringify([b.policy, b.controls]), `<div class="meta" style="margin-bottom:6px">Live policy: <b>${esc(b.policy)}</b></div><table><thead><tr><th>Control</th><th>Default</th><th>In force</th><th>¶</th></tr></thead><tbody>${b.controls.map(c =>
+    `<tr><td>${esc(fieldNames[c.field] || words(c.field))}</td><td class="meta">${esc(fmt(c.baseline))}</td><td>${JSON.stringify(c.baseline) !== JSON.stringify(c.live) ? `<b>${esc(fmt(c.live))}</b>` : esc(fmt(c.live))}</td><td class="b-src">${esc(c.paragraph)}</td></tr>`).join("")}</tbody></table>`);
+  paint("#bank-library", JSON.stringify(b.library), `<table><thead><tr><th>Document</th><th>Status</th><th>Journey</th><th>Impact</th><th>In force</th></tr></thead><tbody>${b.library.map(d =>
+    `<tr class="pick" onclick="$('#doc').value='${esc(d.document_id)}';show('reg')"><td><b>${esc(d.document_id)}</b>${d.title ? `<div class="meta">${esc(d.title)}</div>` : ""}</td><td>${esc(d.status)}</td>
+      <td>${d.journey === "sign_off" ? "Sign-off only" : d.journey ? "Control change" : "–"}</td><td>${esc(d.impact || "–")}</td><td class="b-due">${esc(d.effective_date || "–")}</td></tr>`).join("")}</tbody></table>`);
+}
+
+function renderAction(a) {
+  if (a.pillar === "reg" && a.journey) return renderRegAction(a);
+  return `<div class="action"><div class="top"><span class="pill p-${esc(a.pillar)}">${esc(a.pillar.toUpperCase())}</span><b>${esc(a.kind)}</b>
+      <span class="subj">${a.customer_id ? `<a href="#" onclick="pick('${esc(a.customer_id)}');return false">${esc(a.subject)}</a>` : esc(a.subject)}</span>
+      <span class="spacer"></span><span class="meta">${esc(a.id)}</span></div>
+    <div>${esc(a.question)}</div>
+    <ul>${a.detail.map(d => `<li>${esc(fieldNames[d.split(":")[0]] ? d.replace(d.split(":")[0], fieldNames[d.split(":")[0]]) : d)}</li>`).join("")}</ul>
+    <div class="row"><input id="note-${esc(a.id)}" placeholder="Reviewer note (optional)">
+      <button class="btn ok" onclick="decide('${esc(a.id)}','approve')">Approve</button>
+      ${a.reject ? `<button class="btn no" onclick="decide('${esc(a.id)}','${esc(a.reject)}')">${a.reject === "block" ? "Block" : "Reject"}</button>` : ""}</div></div>`;
+}
+
+
+
+// --- Transaction monitoring tab: rules triage in code, investigator and auditor models, a person for every alert ---
+let tmOpen = new Set((() => { try { return JSON.parse(localStorage.getItem("tmOpen") || "[]"); } catch { return []; } })());
+let ruleSetShown = "retail_cards";
+const NEXT = {close_explained: "Close, explained", request_information: "Request information", block_and_escalate: "Block and escalate", refer_mlro: "Refer to MLRO (SAR, 7.1)"};
+const bandPill = b => b ? `<span class="band b-${esc(b)}">${esc(b)}</span>` : "";
+const BAND_COLOUR = {low: "var(--good)", medium: "var(--warn)", high: "var(--bad)"};
+const scoreBar = (score, cut, band) => `<div class="bar" title="Score ${score}: medium from ${cut[0]}, high from ${cut[1]}"><i style="width:${score}%;background:${BAND_COLOUR[band]}"></i><s style="left:${cut[0]}%"></s><s style="left:${cut[1]}%"></s></div>`;
+const ruleChips = rules => rules.map(r => `<span class="rule" title="${esc(r.name)}: ${esc(r.detail)}">${esc(r.id)} ¶${esc(r.paragraph.replace("Firm rule, ", "firm, "))}</span>`).join("") || '<span class="by">none</span>';
+function toggleTx(id) { tmOpen.has(id) ? tmOpen.delete(id) : tmOpen.add(id); try { localStorage.setItem("tmOpen", JSON.stringify([...tmOpen])); } catch {} shown["#tm"] = null; poll(); }
+function showRuleSet(name) { ruleSetShown = name; shown["#tm-rules"] = null; poll(); }
+const decideTm = (id, decision) => post(`/api/action/${encodeURIComponent(id)}`, {decision, note: document.getElementById("tmnote-" + id)?.value || ""});
+
+const FLOW = [["1 Receive", "code", "replay the card stream"], ["2 Client context", "code", "KYC rating, policy, notes in date"],
+  ["3 Triage", "code", "rules engine: score and band"], ["4 Route", "code", "low → record; medium, high, sample → investigate"],
+  ["5 Investigate", "model", "explains, proposes a next step"], ["6 Audit", "model", "+ code check on every cited fact"],
+  ["7 Human review", "person", "decides every alert"], ["8 Record and alert", "code", "every block or referral is an alert (3.5)"],
+  ["9 Feedback to KYC", "code", "2 alerts in 30 days → refresh (6.5)"]];
+function renderFlow() {
+  return `<div class="flow">${FLOW.map(([t, who, s], i) => `${i ? '<span class="arrow">→</span>' : ""}<div class="fs ${who}"><b>${esc(t)}</b><span>${esc(s)}</span></div>`).join("")}</div>
+    <div class="legend"><span><i style="background:var(--accent)"></i>Code decides what is suspicious and what the policy requires</span><span><i style="background:var(--reg)"></i>Models explain and check; neither can approve or block</span><span><i style="background:var(--warn)"></i>A person decides every medium or high payment</span></div>
+    <div class="meta" style="margin-top:6px">Most payments take the short line: triaged low, recorded, never seen by a model. A report the auditor rejects goes back to the investigator at most twice, then the reviewer sees the objections.</div>`;
+}
+
+function renderRuleSets() {
+  const sets = ref.tm_rule_sets || [], rs = sets.find(s => s.rule_set === ruleSetShown) || sets[0];
+  if (!rs) return '<span class="empty">No rule sets found.</span>';
+  const p = state.policy, hrCut = p.high_risk_review_score, hrPara = p.citations.high_risk_review_score;
+  return `${sets.length > 1 ? `<div class="rs-tabs">${sets.map(s => `<button class="${s.rule_set === rs.rule_set ? "on" : ""}" onclick="showRuleSet('${esc(s.rule_set)}')">${esc(s.title)}</button>`).join("")}</div>` : `<div style="margin-bottom:4px"><b>${esc(rs.title)}</b> <span class="by">· live</span></div>`}
+    <div class="meta" style="margin-bottom:6px">${esc(rs.description)}</div>
+    <table><thead><tr><th>Rule</th><th>Fires when</th><th class="num">Weight</th><th>¶</th><th>Applies to</th></tr></thead><tbody>${rs.rules.map(r =>
+      `<tr><td><b>${esc(r.id)}</b> ${esc(r.name)}${r.runnable ? "" : ' <span class="preview">not run</span>'}</td><td class="by">${esc(r.description)}</td><td class="num">${esc(r.weight)}</td><td>${para(r.paragraph)}</td><td class="by">${r.applies_to.length > 1 ? "all clients" : "high-risk clients"}</td></tr>`).join("")}</tbody></table>
+    ${`<div class="cut"><div>Standard clients: medium from <b>30</b>, high from <b>70</b></div>
+      <div class="${hrCut !== 30 ? "hot" : ""}">High-risk clients: medium from <b>${esc(hrCut)}</b>, high from <b>70</b>${para(hrPara)}</div>
+      <div>Below-the-line sample: <b>${Math.round((rs.sample?.rate || 0) * 100)}%</b> by ID hash${rs.sample?.named?.length ? ", plus " + esc(rs.sample.named.join(", ")) : ""}</div>
+      <div>Reviewer notes valid <b>${esc(rs.review_notes?.valid_days)}</b> days ${para("6.6")}</div></div>
+      <div class="meta" style="margin-top:6px">Rules live in reviewed config (02/rules/${esc(rs.rule_set)}.yaml). Cut-offs come only from the approved policy: today <b>${esc(p.source_document)}</b>.</div>`}`;
+}
+
+function renderTmMetrics() {
+  const m = state.card_clients.map(c => c.metrics || {}).reduce((a, x) => { for (const k in x) a[k] = (a[k] || 0) + x[k]; return a; }, {});
+  if (!m.decided && !state.card_clients.some(c => c.metrics)) return '<span class="empty">Monitor a client to measure the controls.</span>';
+  const pct = (a, b) => b ? Math.round(100 * a / b) + "%" : "–";
+  const tile = (value, label, cls = "") => `<div class="metric ${cls}"><b>${value}</b><span>${label}</span></div>`;
+  return `<div class="metrics">
+    ${tile(pct(m.reached_human, m.needs_human), `Review routing: ${m.reached_human || 0} of ${m.needs_human || 0} medium or high cases reached a person (3.5, 6.3)`, m.needs_human ? (m.reached_human === m.needs_human ? "ok" : "bad") : "")}
+    ${tile(`${m.band_agrees || 0}/${m.labelled || 0}`, "Bands agree with the analyst labels", m.labelled && m.band_agrees === m.labelled ? "ok" : "")}
+    ${tile(`${m.by_rules || 0}/${m.decided || 0}`, "Payments cleared by the rules, never seen by a model")}
+    ${tile(m.audit_returns || 0, `Reports the auditor returned${m.facts_failed ? ` (${m.facts_failed} facts failed the code check)` : ""}`, m.audit_returns ? "bad" : "")}
+    ${tile(`${m.sample_escalated || 0}/${m.sampled || 0}`, "Sampled low payments the investigator escalated (disagreement)")}
+  </div><div class="meta" style="margin-top:6px">Testing against known outcomes (8.2): the gold set is the 11 labelled payments. Run <code>evals</code> for the scored experiments in LangSmith.</div>`;
+}
+
+function routeOf(t) {
+  const d = t.decision, tri = t.triage;
+  if (d) return d.decided_by === "rules" ? (d.sample ? "Sample → investigator → rules" : "Rules") : d.investigations ? `Investigator${d.investigations > 1 ? " ×" + d.investigations : ""} + auditor` : "Person";
+  if (t.review) return "Investigator + auditor";
+  return tri.band !== "low" ? "Investigator + auditor" : tri.sample ? "Sample → investigator" : "Rules";
+}
+
+function renderTxRow(c, t) {
+  const d = t.decision, q = t.review?.question, rep = d?.report || q?.report, aud = d?.audit_detail || q?.audit;
+  const tri = d ? {score: d.risk_score, band: d.band, cut_offs: d.cut_offs, rules_fired: d.rules_detail || [], sample: d.sample} : q ? {score: q.risk_score, band: q.band, cut_offs: q.cut_offs, rules_fired: q.rules_fired, sample: false} : t.triage;
+  const open = tmOpen.has(t.transaction_id) || !!t.review;
+  const alert = c.alerts.some(a => a.transaction_id === t.transaction_id);
+  const dec = d ? `<span class="d-${esc(d.final_decision)}">${esc(d.final_decision)}</span> <span class="by">by ${esc(d.decided_by)}</span>`
+            : t.review ? `<span class="d-pending">with you</span>` : '<span class="by">not run</span>';
+  const lab = t.analyst ? `<span class="${t.band === t.expected_band && (!d || d.final_decision === t.analyst.decision) ? "match" : "miss"}">${esc(t.analyst.decision)}</span> <span class="by">${esc(t.expected_band)}${t.analyst.ambiguous ? ", ambiguous" : ""}</span>` : '<span class="by">–</span>';
+  return `<tr class="tx ${open ? "open" : ""}" onclick="toggleTx('${esc(t.transaction_id)}')">
+    <td><b>${esc(t.transaction_id)}</b><div class="by">${esc(t.timestamp.replace("T", " "))}</div></td>
+    <td>${esc(t.merchant)}<div class="by">${esc(t.category.replace(/_/g, " "))} · ${esc(t.country)} · ${esc(t.channel.replace("_", " "))}</div></td>
+    <td class="num">${Number(t.amount).toLocaleString()} ${esc(t.currency)}</td>
+    <td>${bandPill(tri.band)} <b>${esc(tri.score)}</b>${!d && !q ? '<span class="preview" title="What the rules say under today\'s settings; monitoring has not run">preview</span>' : ""}${tri.sample ? '<span class="preview" title="Below-the-line sample">sample</span>' : ""}${scoreBar(tri.score, tri.cut_offs, tri.band)}</td>
+    <td>${ruleChips(tri.rules_fired)}</td>
+    <td class="by">${esc(routeOf(t))}</td>
+    <td>${rep ? `<span class="ns ns-${esc(rep.next_step)}">${esc(NEXT[rep.next_step])}</span><div class="by">${esc(rep.assessment.replace(/_/g, " "))} · conf ${esc(rep.confidence)}</div>` : '<span class="by">–</span>'}</td>
+    <td>${aud ? `<span class="audit-${esc(aud.verdict)}">${aud.verdict === "pass" ? "✓ pass" : "✗ return"}</span>${(d?.audit_returns || 0) ? `<div class="by">returned ${d.audit_returns}×</div>` : ""}` : '<span class="by">–</span>'}</td>
+    <td>${dec}${alert ? '<span class="alert-dot" title="Alert (3.5)"></span>' : ""}</td>
+    <td>${lab}</td></tr>
+    ${open ? `<tr class="more"><td colspan="10">${renderTxMore(c, t, tri, rep, aud)}</td></tr>` : ""}`;
+}
+
+function renderTxMore(c, t, tri, rep, aud) {
+  const d = t.decision, failed = aud?.facts_failed || [];
+  const evOk = ev => !failed.some(f => f.startsWith(ev.claim + " ["));
+  const rules = tri.rules_fired.length ? `<ul>${tri.rules_fired.map(r => `<li><b>${esc(r.id)}</b> ${esc(r.name)} <span class="by">+${esc(r.weight)}</span>${para(r.paragraph)}<div class="by">${esc(r.detail)}</div></li>`).join("")}</ul>` : '<div class="by">No rule fired.</div>';
+  const report = rep ? `<div>${esc(rep.summary)}</div>
+      <table style="margin-top:6px"><thead><tr><th></th><th>Evidence</th><th>Source</th><th>Value</th></tr></thead><tbody>${rep.evidence.map(ev =>
+        `<tr><td class="${evOk(ev) ? "ev-ok" : "ev-bad"}" title="${evOk(ev) ? "Matches its record" : "Failed the code fact check"}">${evOk(ev) ? "✓" : "✗"}</td><td>${esc(ev.claim)}</td><td class="src">${esc(ev.source)}</td><td class="src">${esc(ev.value)}</td></tr>`).join("") || '<tr><td colspan="4" class="by">No evidence cited.</td></tr>'}</tbody></table>
+      <div class="meta" style="margin-top:4px">Assessment <b>${esc(rep.assessment.replace(/_/g, " "))}</b> · risk ${esc(rep.risk_score)} · confidence ${esc(rep.confidence)}${rep.confidence < c.tm.confidence_threshold ? ` <span class="miss">below ${esc(c.tm.confidence_threshold)}: the reviewer is told it is unsure</span>` : ""} · cites ${rep.paragraphs.map(p => para(p)).join("")}</div>`
+    : `<div class="by">${tri.band === "low" ? "Low band, not sampled: approved by the rules, never sent to a model." : "Not investigated yet."}</div>`;
+  const audit = aud ? `<div class="audit-${esc(aud.verdict)}">${aud.verdict === "pass" ? "✓ Passed" : "✗ Returned"}${d?.audit_returns ? ` · returned ${d.audit_returns}× in all` : ""}${aud.tipping_off ? ' · <span class="miss">tipping-off wording (7.2)</span>' : ""}</div>
+      ${failed.length || aud.issues.length ? `<ul>${failed.map(f => `<li class="ev-bad">Fact check: ${esc(f)}</li>`).join("")}${aud.issues.map(i => `<li>${esc(i)}</li>`).join("")}</ul>` : '<div class="by">Every cited fact matches its record; reasoning, paragraphs and next step fit.</div>'}`
+    : '<div class="by">No audit: nothing was escalated.</div>';
+  const human = d ? `<div><span class="d-${esc(d.final_decision)}">${esc(d.final_decision)}</span> by <b>${esc(d.decided_by)}</b>${d.agent_decision && d.decided_by === "human" ? ` <span class="by">(investigator proposed ${esc(NEXT[d.next_step] || d.next_step)})</span>` : ""}</div>
+      <div class="by">${esc(d.reason)}</div>${d.reviewer_note ? `<div class="meta" style="margin-top:4px">Note kept for later payments until <b>${esc(d.note_valid_until)}</b>${para("6.6")}</div>` : ""}
+      <div class="meta" style="margin-top:4px">Recorded under KYC ${esc((d.kyc_rating || "none").toUpperCase())} · ${esc(d.rule_set)} · ${esc(d.policy_version)} · cut-offs ${esc(d.cut_offs.join("/"))}</div>`
+    : t.review ? `<div class="decide"><div class="q" style="font-weight:600;margin-bottom:4px">${esc(t.review.question.question.split("?")[0])}?</div>
+        <ul style="margin:0 0 8px;padding-left:18px;color:var(--quiet);font-size:12px">${t.review.question.why_review.map(w => `<li>${esc(w)}</li>`).join("")}</ul>
+        <div class="row" onclick="event.stopPropagation()"><input id="tmnote-${esc(t.review.id)}" placeholder="Note for the file, reused on later payments (6.6)">
+          <button class="btn ok" onclick="decideTm('${esc(t.review.id)}','approve')">Approve</button><button class="btn no" onclick="decideTm('${esc(t.review.id)}','block')">Block</button></div>
+        <div class="meta" style="margin-top:6px">The same case is in the Dashboard queue. The investigator proposes <b>${esc(NEXT[t.review.question.next_step] || "–")}</b>; your decision stands.</div></div>`
+    : '<div class="by">Not decided yet.</div>';
+  return `<div class="more-grid" onclick="event.stopPropagation()">
+    <div><h3>3 Triage (code)</h3>${rules}<div class="meta" style="margin-top:4px">Score ${esc(tri.score)} of 100 → ${bandPill(tri.band)} (medium from ${esc(tri.cut_offs[0])}, high from ${esc(tri.cut_offs[1])})</div></div>
+    <div><h3>5 Investigator (model)</h3>${report}</div>
+    <div><h3>6 Auditor (model + code fact check)</h3>${audit}</div>
+    <div><h3>7–8 Human review and record</h3>${human}</div></div>`;
+}
+
+function renderCard(c) {
+  const busy = !!state.status.running, s = c.tm, flag = c.refresh_flag, cs = c.conduct;
+  const why = !c.onboarded ? "Not onboarded yet: screen and approve them in KYC first" : c.tm_waiting ? "A payment is waiting for a reviewer" : "";
+  return `<div class="panel cust" style="margin-top:16px">
+    <div class="cust-head"><span class="name"><a href="#" onclick="pick('${esc(c.customer_id)}');return false">${esc(c.name)}</a></span><span class="meta">${esc(c.customer_id)} · card ${esc(c.user_id)}</span>
+      <span class="rating r-${c.risk ? esc(c.risk.rating) : "none"}">${c.risk ? "KYC " + esc(c.risk.rating.toUpperCase()) : "NOT ONBOARDED"}</span>
+      ${cs.decisions ? `<span class="score sc-${esc(cs.score)}" title="TM conduct score for the period monitored">TM ${esc(cs.score.toUpperCase())}</span>` : ""}<span class="spacer"></span>
+      <button class="act ${c.monitor_due ? "next" : ""}" ${busy || why || !c.runnable ? "disabled" : ""} title="${esc(why)}" onclick="post('/api/client/${esc(c.customer_id)}/monitor')">Monitor payments</button></div>
+    <div class="chips"><span class="${s.client_band === "high_risk" ? "hot" : ""}">Rules: ${s.client_band === "high_risk" ? "high-risk set (R-01 to R-05)" : "standard set (R-01 to R-04)"}</span>
+      <span class="${s.cut_offs[0] !== 30 ? "hot" : ""}">Medium from <b>${esc(s.cut_offs[0])}</b>, high from <b>${esc(s.cut_offs[1])}</b>${para(s.cut_off_paragraph)}</span>
+      <span>Investigator unsure below <b>${esc(s.confidence_threshold)}</b></span><span>Policy <b>${esc(s.policy)}</b></span>
+      ${c.monitor_due ? '<span class="hot">Rating or policy changed since the last run: monitoring due</span>' : ""}</div>
+    ${flag ? `<div class="flag">KYC refresh due by ${esc(flag.due_by || "–")}: ${esc(flag.reason)} ${para("5.5")}</div>` : ""}
+    ${cs.decisions ? `<div class="meta" style="margin:8px 0">TM conduct score <b>${esc(cs.score)}</b>${cs.period ? ` for ${esc(cs.period[0])} to ${esc(cs.period[1])}` : ""}: ${cs.drivers.map(esc).join("; ")}. Evidence for the KYC reviewer, never a rating on its own.</div>` : ""}
+    <table><thead><tr><th>Payment</th><th>Merchant</th><th class="num">Amount</th><th>Triage</th><th>Rules fired</th><th>Route</th><th>Investigator</th><th>Audit</th><th>Decision</th><th>Analyst label</th></tr></thead>
+      <tbody>${c.transactions.map(t => renderTxRow(c, t)).join("")}</tbody></table>
+    <div class="meta" style="margin-top:6px">Click a payment for its triage, the investigator's report with every cited fact checked, the auditor's verdict and the decision. Analyst label: the gold answer from the data set, with the band it implies.</div></div>`;
+}
+
+const listTable = rows => rows.length ? `<table><thead><tr>${Object.keys(rows[0]).map(k => `<th>${esc(words(k))}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${Object.values(r).map(v => `<td>${esc(fmt(v))}</td>`).join("")}</tr>`).join("")}</tbody></table>` : "";
+
+async function poll() {
+  if (!ref) {
+    ref = await (await fetch("/api/reference")).json();
+    $("#pep").innerHTML = listTable(ref.pep_list); $("#sanctions").innerHTML = listTable(ref.sanctions_list);
+    const f = ref.firm;
+    $("#firm").innerHTML = `<div><b>${esc(f.name)}</b> <span class="meta">${esc(f.firm_id)} · ${esc(f.type)} · ${Number(f.customers).toLocaleString()} customers · ${esc(f.total_assets)}</span></div>
+      <div class="meta" style="margin:4px 0 8px">${esc(f.notes || "")}</div><div class="hist-title">Contracted providers</div>${listTable(f.providers.map(p => ({provider: p.name, service: p.service, contract_end: p.contract_end, material: p.material})))}`;
+  }
+  state = await (await fetch(`/api/state?after=${lastSeq}&customer=${encodeURIComponent(selected)}`)).json();
+  const busy = !!state.status.running, k = state.kpis;
+  $("#mode").textContent = state.offline ? "OFFLINE REHEARSAL (scripted model)" : "LIVE MODELS";
+  $("#mode").className = "badge " + (state.offline ? "offline" : "live");
+  $("#status").textContent = busy ? `Running: ${state.status.running}…` : "";
+  if (state.status.error) $("#err").textContent = state.status.error;
+  if (state.langsmith_project) $("#ls").textContent = `LangSmith: ${state.langsmith_project}`;
+  $("#scan").disabled = $("#brief").disabled = busy;
+  $("#n-dash").hidden = !state.actions.length; $("#n-dash").textContent = state.actions.length;
+
+  const tile = (n, label, to, hot) => `<div class="kpi ${hot && n ? "hot" : ""}" onclick="show('${to}')"><b>${n}</b><span>${label}</span></div>`;
+  paint("#kpis", JSON.stringify([k, state.policy.source_document]), tile(k.awaiting_decision, "Actions waiting for you", "dash", true) + tile(k.new_applications, "New applications to screen", "kyc", true)
+    + tile(k.onboarded, "Onboarded clients", "kyc") + tile(k.refresh_or_reassess, "Refresh or re-assessment due", "dash", true)
+    + tile(k.payments_for_review, "Payments for review", "tm", true) + tile(k.monitoring_due, "Clients due monitoring", "tm", true)
+    + `<div class="kpi" onclick="show('reg')"><b style="font-size:18px;line-height:1.6">${esc(state.policy.source_document)}</b><span>Live policy</span></div>`);
+  paint("#actions", JSON.stringify(state.actions), state.actions.length ? state.actions.map(renderAction).join("") : '<div class="empty">Nothing waiting. Press Scan to look for new work.</div>');
+
+  kycRender();
+  if (tab === "bank") loadBank().catch(e => { $("#err").textContent = "Could not load the bank view: " + e; });
+  paint("#tm-flow", "flow", renderFlow());
+  paint("#tm-rules", JSON.stringify([ruleSetShown, state.policy]), renderRuleSets());
+  paint("#tm-metrics", JSON.stringify(state.card_clients.map(c => c.metrics)), renderTmMetrics());
+  paint("#tm", JSON.stringify([state.card_clients, busy, state.actions.map(a => a.id), [...tmOpen]]),
+    state.card_clients.map(renderCard).join("") || '<div class="panel empty" style="margin-top:16px">No client with a card account.</div>');
+
+  const titles = state.document_titles || {};
+  if (paint("#doc", JSON.stringify([state.documents, titles]), state.documents.map(d => `<option value="${esc(d)}">${esc(d)}: ${esc(titles[d] || "")}</option>`).join(""))) $("#doc").value = state.documents.includes("PS26-7") ? "PS26-7" : state.documents[0];
+  paintBrief();
+  const ch = state.policy_changes, regWaiting = state.actions.filter(a => a.pillar === "reg"), waiting = regWaiting[0];
+  paint("#policy", JSON.stringify([ch, regWaiting]), regWaiting.map(w => `<div class="flag" style="margin-bottom:8px">${w.journey === "sign_off"
+      ? `A brief is waiting for sign-off on the Dashboard: ${esc(w.subject)}. It changes no KYC or monitoring control.`
+      : `A policy change is waiting for approval on the Dashboard: ${esc(w.subject)}`}</div>`).join("")
+    + (ch.length ? `<div class="meta">Live, from <b>${esc(state.policy.source_document)}</b>. These change how KYC rates clients and how payments are monitored.</div>
+      <table class="changes"><tbody>${ch.map(c => `<tr><td>${esc(fieldNames[c.field] || c.field)}${para(c.paragraph)}</td><td class="after">${esc(fmt(c.after))}</td></tr>`).join("")}</tbody></table>`
+      : '<span class="empty">Baseline: the default controls. No regulatory change is live.</span>'));
+  paint("#affected", JSON.stringify(state.affected), state.affected.length ? `<div class="meta">Last assessed under an older policy. Each has a re-assessment action on the Dashboard.</div>` + listTable(state.affected.map(a => ({client: `${a.name} (${a.customer_id})`, rating: a.rating, assessed_under: a.policy})))
+    : '<span class="empty">No client is out of date with the live policy.</span>');
+
+  const chatBusy = state.status.running === "supervisor chat";
+  $("#q").disabled = $("#send").disabled = busy || state.offline;
+  if (state.offline) $("#q").placeholder = "Switched off in offline rehearsal (needs live models)";
+  if (state.chat.length && paint("#chat", JSON.stringify(state.chat) + chatBusy, state.chat.map(m => `<div class="msg ${esc(m.role)}">${
+      m.skills.map(s => `<span class="chip skill">skill: ${esc(s)}</span>`).join("")}${m.tools.map(t => `<span class="chip">${esc(t)}</span>`).join("")}${
+      m.skills.length || m.tools.length ? "<br>" : ""}${esc(m.text)}</div>`).join("") + (chatBusy ? '<div class="msg agent empty">Working…</div>' : "")))
+    $("#chat").scrollTop = $("#chat").scrollHeight;
+
+  for (const e of state.events) {
+    lastSeq = Math.max(lastSeq, e.seq);
+    const div = document.createElement("div"); div.className = "ev";
+    div.innerHTML = `<span class="pill p-${esc(e.pillar)}">${esc(e.pillar.toUpperCase())}</span>${esc(e.title)}<div class="t">${new Date(e.ts * 1000).toLocaleTimeString()}</div>`;
+    $("#feed").prepend(div);
+  }
+}
+show(tab); poll(); setInterval(poll, 1200);
+</script>
+</body>
+</html>

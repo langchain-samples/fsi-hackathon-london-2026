@@ -90,7 +90,77 @@ Then send it a message such as `Summarise document PS26-4 for FIRM-001`. Or call
 from agent import agent
 
 result = agent.invoke({"messages": [{"role": "user", "content": "Summarise document PS26-4 for FIRM-001"}]})
-print(result["messages"][-1].text)
+brief = result["structured_response"]   # a Brief, see below
+```
+
+### The output: a `Brief`
+
+Every run returns the same fixed shape (`brief.py`), following the team's Inputs -> Agent -> Output template:
+
+```json
+{
+  "document_id": "PS26-4",
+  "firm_id": "FIRM-001",
+  "title": "Policy Statement PS26/4: ...",
+  "summary": "What the document is about, when it takes effect, and what it means for this firm (small firm or not).",
+  "items": [
+    {
+      "id": 40,
+      "summary": "Name a senior manager responsible for operational resilience by 31 January 2027.",
+      "source": "PS26-4 para 8.1",
+      "applies_to_firm": "yes",
+      "firm_deadline": "31 January 2027",
+      "firm_action": "No operational resilience senior manager is recorded: appoint and name one by 31 January 2027."
+    }
+  ]
+}
+```
+
+One item per obligation, numbered from 1, each citing its paragraph. `id`, `summary` and `source` are the team
+template's fields; `applies_to_firm` (yes / no / unclear), `firm_deadline` and `firm_action` say what the obligation
+means for this firm. The control tower reads the Brief as JSON through `contracts.brief_from_result`, so nothing on
+its side needs to change.
+
+### Two documents, two kinds of brief
+
+| | PS26-7 (synthetic, ours) | PS26-4 (from LangChain) |
+|---|---|---|
+| About | Financial crime: due diligence and transaction monitoring | Operational resilience and third-party technology |
+| What matters | The rules, which the control tower turns into policy for KYC (01) and TM (02) | The firm: its providers, contract dates and data gaps |
+
+The firm's facts come from `get_firm_facts` (`tools/firm_facts.py`). It returns the firm's profile plus what can be
+worked out exactly in code: the small-firm test under the document's own paragraph 2.3, the named senior managers,
+the important business services and the provider they share (NimbusCloud), and gaps such as no operational
+resilience senior manager. The model applies these facts; it never compares numbers or fills in missing data itself.
+
+### The reviewer summary (sections A to E)
+
+The agent runs in two steps (`agent.py`): `brief` (the deep agent above) and then `review` (`review.py`), which writes
+the summary a compliance reviewer reads first, in MillTech's horizon-scanning format:
+
+- a classification (Actionable / Indicative / Informative), impact (High / Medium / Low) and owning teams;
+- **A** summary, **B** applicability to the bank, **C** impact, **D** recommended actions (immediate, near-term,
+  monitoring, each with an owner, deadline and paragraph), **E** key takeaways and open questions (every "unclear"
+  item becomes one).
+
+The firm deadlines (`key_dates`) and counts are worked out in code; the model writes the narrative. The result is a
+`ReviewedBrief`: the Brief plus `review`, `key_dates` and `counts`. In the control tower, a brief that changes KYC or
+monitoring controls (PS26-7) goes to a reviewer to approve or reject the changes; one that changes no control (PS26-4)
+goes to a reviewer to sign off or send back.
+
+### Checking the output
+
+`brief_evals.py` scores the Brief with plain-code checks: ids in order, sources well formed and real, must-have
+paragraphs found, key numbers and deadlines kept word for word, nothing cited from non-obligation sections, every item
+marked for the firm, and hand-picked firm findings right (for PS26-4: the missing senior manager, the NimbusCloud and
+PayCore contract deadlines, the NimbusCloud concentration risk, no small-firm extensions). Four more check the
+reviewer summary: every section present with known owning teams, every action and question citing a real paragraph,
+the key findings carried through, and every "unclear" item raised as an open question.
+
+```bash
+uv run python brief_evals.py --local               # print the scores here
+uv run python brief_evals.py --local --save out    # also save each Brief as JSON in out/
+uv run python brief_evals.py                       # run as a LangSmith dataset + experiment
 ```
 
 Because `agent.py` imports `model` from `utils.models`, the model your `.env` selects is the one the agent uses
@@ -103,12 +173,17 @@ everywhere: in the notebook, in Studio, and when deployed.
 ├── README.md                       (this file: setup and how to run)
 ├── pyproject.toml                  (dependencies)
 ├── langgraph.json                  (registers agent.py's `agent` for langgraph dev)
-├── agent.py                        (the main deep agent, exported as `agent`)
+├── agent.py                        (the agent: brief, then review; exported as `agent`)
 ├── instructions.md                 (the main agent's system prompt)
+├── brief.py                        (the Brief: one item per obligation)
+├── review.py                       (the reviewer summary, A to E, and the ReviewedBrief the agent returns)
+├── reviewer_instructions.md        (the reviewer summary's prompt)
+├── brief_evals.py                  (pass/fail checks on the Brief and the summary, local or in LangSmith)
 ├── sub_agent.py                    (the section-summariser sub-agent and its SectionSummary output)
 ├── sub_agent_instructions.md       (the sub-agent's system prompt)
 ├── tools/
 │   ├── documents.py                (get_document)
+│   ├── firm_facts.py               (get_firm_facts: profile, senior managers, services, small-firm test, gaps)
 │   ├── firms.py                    (get_firm_profile)
 │   └── third_party_providers.py    (get_third_party_provider)
 ├── data/                           (the firm's database: one JSONL file per table, plus the documents)

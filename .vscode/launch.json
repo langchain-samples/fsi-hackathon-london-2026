@@ -1,6 +1,6 @@
 {
   "version": "0.2.0",
-  "configurations": [    
+  "configurations": [
     {
       "name": "KYC experiments",
       "type": "debugpy",
@@ -8,7 +8,9 @@
       "program": "${workspaceFolder}/01_kyc_agent/scripts/run_experiments.py",
       "args": [],
       "cwd": "${workspaceFolder}/01_kyc_agent",
-      "env": { "PYTHONPATH": "${workspaceFolder}/01_kyc_agent" },
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/01_kyc_agent"
+      },
       "console": "integratedTerminal"
     },
     {
@@ -18,7 +20,66 @@
       "program": "${workspaceFolder}/02_transaction_monitoring_agent/scripts/run_experiments.py",
       "args": [],
       "cwd": "${workspaceFolder}/02_transaction_monitoring_agent",
-      "env": { "PYTHONPATH": "${workspaceFolder}/02_transaction_monitoring_agent" },
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/02_transaction_monitoring_agent"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Control Tower: portal (live)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "portal.app:app",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}/00_control_tower",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Control Tower: portal (offline rehearsal)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "portal.app:app",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}/00_control_tower",
+      "env": {
+        "CONTROL_TOWER_OFFLINE": "1"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Control Tower: doctor",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "control_tower.doctor",
+      "cwd": "${workspaceFolder}/00_control_tower",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Control Tower: scenario (live)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/00_control_tower/scenario.py",
+      "cwd": "${workspaceFolder}/00_control_tower",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Control Tower: tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "-q",
+        "tests"
+      ],
+      "cwd": "${workspaceFolder}/00_control_tower",
       "console": "integratedTerminal"
     }
   ]
