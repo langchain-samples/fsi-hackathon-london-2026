@@ -105,6 +105,10 @@ class TestComplianceHttpApi(unittest.TestCase):
             github_client=self.mock_gh,
             reports_dir=self.reports_dir,
             default_org="natchainsix",
+            model_lister=lambda: [
+                {"id": "openai:gpt-6-luna", "provider": "openai", "name": "gpt-6-luna"},
+                {"id": "openai:gpt-6-terra", "provider": "openai", "name": "gpt-6-terra"},
+            ],
         )
         self._client_cm = TestClient(self.app)
         self.client = self._client_cm.__enter__()
@@ -133,6 +137,19 @@ class TestComplianceHttpApi(unittest.TestCase):
         pulls = self.client.get("/api/targets/natchainsix/safelend-co/pulls")
         self.assertEqual(pulls.status_code, 200)
         self.assertEqual(pulls.json()["pull_requests"][0]["title"], "Update withdrawal window")
+
+        models_resp = self.client.get("/api/models")
+        self.assertEqual(models_resp.status_code, 200)
+        mdata = models_resp.json()
+        self.assertEqual([m["id"] for m in mdata["models"]], ["openai:gpt-6-luna", "openai:gpt-6-terra"])
+
+        sel = self.client.post("/api/models/select", json={"model_name": "openai:gpt-6-terra"})
+        self.assertEqual(sel.status_code, 200)
+        self.assertEqual(sel.json()["selected_model"], "openai:gpt-6-terra")
+        self.assertEqual(self.client.get("/health").json()["model_name"], "openai:gpt-6-terra")
+
+        bad = self.client.post("/api/models/select", json={"model_name": "openai:gpt-4o"})
+        self.assertEqual(bad.status_code, 400)
 
     def test_review_direct_and_langserve_match_regulens_contract_and_persist_findings(self) -> None:
         payload = {

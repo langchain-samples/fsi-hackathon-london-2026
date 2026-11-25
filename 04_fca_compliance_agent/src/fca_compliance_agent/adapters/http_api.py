@@ -58,7 +58,13 @@ from .github_codebase import (
     render_codebase_markdown,
 )
 from .github_pr import build_github_pr_review_module
-from .llm.langchain_llm import load_repo_env
+from .llm.langchain_llm import (
+    LangChainComplianceAnalyzer,
+    list_available_models,
+    load_repo_env,
+    resolve_default_model_name,
+)
+from .outbound.code_remediator import LangChainCodeRemediator
 from .outbound.github_client import GitHubCLIAdapter
 from .product_spec import build_product_spec_review_module
 
@@ -68,6 +74,7 @@ DEFAULT_GITHUB_ORG = "natchainsix"
 
 _REPORT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _SLUG_PART_RE = re.compile(r"^[\w.-]+$")
+_MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9_.:/-]{1,120}$")
 
 _STATUS_TO_REGULENS: dict[str, str] = {
     "non_compliant": "NON_COMPLIANT",
@@ -100,10 +107,15 @@ class ReviewRequestPayload(BaseModel):
     files: list[ReviewFile] = Field(default_factory=list)
     instructions: str = ""
     specialty: str = "fca_compliance"
+    model_name: str | None = None
 
 
 class LangServeReviewEnvelope(BaseModel):
     input: ReviewRequestPayload
+
+
+class ModelSelectPayload(BaseModel):
+    model_name: str
 
 
 class RunRequestPayload(BaseModel):
@@ -120,6 +132,7 @@ class RunRequestPayload(BaseModel):
     spec_text: str | None = None
     spec_path: str | None = None
     message: str | None = None
+    model_name: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +280,7 @@ def create_app(
     reports_dir: Path | None = None,
     default_org: str | None = None,
     pipelines: dict[str, Any] | None = None,
+    model_lister: Callable[[], list[dict[str, str]]] | None = None,
 ) -> FastAPI:
     """Create the FastAPI application wired to real compliance graphs and GitHub discovery."""
     load_repo_env()
@@ -274,30 +288,64 @@ def create_app(
     resolved_reports_dir = Path(reports_dir) if reports_dir is not None else REPORTS_DIR
     resolved_org = (default_org or os.environ.get("GITHUB_ORG") or DEFAULT_GITHUB_ORG).strip()
     gh_client = github_client or GitHubCLIAdapter()
+    default_model = resolve_default_model_name()
+    fetch_models = model_lister or list_available_models
 
     state_cache: dict[str, Any] = {
         "core": core_subgraph,
+        "cores_by_model": {},
         "pipelines": dict(pipelines) if pipelines else None,
+        "pipelines_by_model": {},
+        "selected_model": default_model,
         "runs": {},
         "run_subscribers": {},
         "tasks": set(),
     }
 
-    def get_core() -> Any:
-        if state_cache["core"] is None:
-            factory = core_factory or build_default_core_subgraph
-            state_cache["core"] = factory()
-        return state_cache["core"]
+    def _validate_model_name(name: str | None) -> str:
+        chosen = (name or state_cache["selected_model"] or default_model).strip()
+        if not _MODEL_NAME_RE.match(chosen) or "gpt-6" not in chosen.lower():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported model_name {chosen!r}; only gpt-6 based models are allowed.",
+            )
+        return chosen
 
-    def get_pipelines() -> dict[str, Any]:
-        if state_cache["pipelines"] is None:
-            core = get_core()
+    def get_core(model_name: str | None = None) -> Any:
+        chosen = _validate_model_name(model_name)
+        if state_cache["core"] is not None:
+            return state_cache["core"]
+        if core_factory is not None:
+            if chosen not in state_cache["cores_by_model"]:
+                state_cache["cores_by_model"][chosen] = core_factory()
+            return state_cache["cores_by_model"][chosen]
+        if chosen not in state_cache["cores_by_model"]:
+            state_cache["cores_by_model"][chosen] = build_default_core_subgraph(
+                analyzer_port=LangChainComplianceAnalyzer(model_name=chosen),
+            )
+        return state_cache["cores_by_model"][chosen]
+
+    def get_pipelines(model_name: str | None = None) -> dict[str, Any]:
+        chosen = _validate_model_name(model_name)
+        if state_cache["pipelines"] is not None:
+            return state_cache["pipelines"]
+        if chosen not in state_cache["pipelines_by_model"]:
+            core = get_core(chosen)
             pr_pipe = build_pipeline_for_module(
                 build_github_pr_review_module(github_client=gh_client, reports_dir=resolved_reports_dir),
                 core_subgraph=core,
             )
+            remediator = (
+                None
+                if state_cache["core"] is not None or core_factory is not None
+                else LangChainCodeRemediator(model_name=chosen)
+            )
             codebase_pipe = build_pipeline_for_module(
-                build_github_codebase_review_module(github_client=gh_client, reports_dir=resolved_reports_dir),
+                build_github_codebase_review_module(
+                    remediator=remediator,
+                    github_client=gh_client,
+                    reports_dir=resolved_reports_dir,
+                ),
                 core_subgraph=core,
             )
             spec_pipe = build_pipeline_for_module(
@@ -309,13 +357,13 @@ def create_app(
                 codebase_review=codebase_pipe,
                 product_spec=spec_pipe,
             )
-            state_cache["pipelines"] = {
+            state_cache["pipelines_by_model"][chosen] = {
                 "pr_review": pr_pipe,
                 "codebase_review": codebase_pipe,
                 "product_spec": spec_pipe,
                 "chat": combined_pipe,
             }
-        return state_cache["pipelines"]
+        return state_cache["pipelines_by_model"][chosen]
 
     app = FastAPI(
         title="FCA & CCA Compliance Agent API",
@@ -347,13 +395,37 @@ def create_app(
         return {
             "status": "ok",
             "default_org": resolved_org,
-            "model_name": os.environ.get("MODEL_NAME", "openai:gpt-6-luna"),
+            "model_name": state_cache["selected_model"],
+            "default_model": default_model,
             "fca_mcp_url": fca_url,
             "fca_mcp_reachable": _probe_url(fca_url),
             "cca_mcp_url": cca_url,
             "cca_mcp_reachable": _probe_url(cca_url),
             "reports_count": len(reports),
             "active_runs": sum(1 for r in state_cache["runs"].values() if r["status"] in {"queued", "running"}),
+        }
+
+    # ------------------------------------------------------------------
+    # Model Discovery & Selection (LangSmith LLM Gateway)
+    # ------------------------------------------------------------------
+
+    @app.get("/api/models")
+    async def list_models() -> dict[str, Any]:
+        models = await asyncio.to_thread(fetch_models)
+        return {
+            "default_model": default_model,
+            "selected_model": state_cache["selected_model"],
+            "models": models,
+        }
+
+    @app.post("/api/models/select")
+    async def select_model(req: ModelSelectPayload) -> dict[str, Any]:
+        chosen = _validate_model_name(req.model_name)
+        state_cache["selected_model"] = chosen
+        logger.info("Active compliance model switched to %s", chosen)
+        return {
+            "default_model": default_model,
+            "selected_model": chosen,
         }
 
     # ------------------------------------------------------------------
@@ -395,14 +467,16 @@ def create_app(
             units=units,
         )
 
+        effective_model = _validate_model_name(req.model_name)
         started = time.monotonic()
         logger.info(
-            "POST /review started for %s (%d file(s), commit=%s)",
+            "POST /review started for %s (%d file(s), commit=%s, model=%s)",
             req.repository,
             len(units),
             req.commit[:12],
+            effective_model,
         )
-        core = get_core()
+        core = get_core(effective_model)
         result = await core.ainvoke({"analysis_input": analysis_input})
         report: FindingsReport = result["findings_report"]
         _persist_report(report, resolved_reports_dir)
@@ -722,21 +796,27 @@ def create_app(
 
         return "review", f"Completed node {full_node}"
 
-    async def _run_pipeline_job(run_id: str, mode: str, payload: dict[str, Any]) -> None:
+    async def _run_pipeline_job(
+        run_id: str,
+        mode: str,
+        payload: dict[str, Any],
+        model_name: str,
+    ) -> None:
         record = state_cache["runs"][run_id]
         record["status"] = "running"
         started = time.monotonic()
         output_type_hint = payload.get("output_type") or (payload.get("raw_input") or {}).get("output_type")
         logger.info(
-            "Run %s started: mode=%s target=%s output_type=%s",
+            "Run %s started: mode=%s target=%s model=%s output_type=%s",
             run_id,
             mode,
             record["target"],
+            model_name,
             output_type_hint,
         )
-        _emit_run_event(run_id, "inbound", "start", f"Starting {mode} for {record['target']}")
+        _emit_run_event(run_id, "inbound", "start", f"Starting {mode} for {record['target']} ({model_name})")
         try:
-            pipeline = get_pipelines()[mode]
+            pipeline = get_pipelines(model_name)[mode]
             final_state: dict[str, Any] = {}
 
             if hasattr(pipeline, "astream"):
@@ -802,15 +882,17 @@ def create_app(
     @app.post("/api/runs", status_code=202)
     async def create_run(req: RunRequestPayload) -> dict[str, Any]:
         target, payload = _build_run_input(req)
+        effective_model = _validate_model_name(req.model_name)
         run_id = f"RUN-{uuid4().hex[:8].upper()}"
         now = datetime.now(timezone.utc).isoformat()
         record: dict[str, Any] = {
             "run_id": run_id,
             "mode": req.mode,
             "target": target,
+            "model_name": effective_model,
             "status": "queued",
             "current_stage": "queued",
-            "current_message": f"Queued {req.mode} for {target}",
+            "current_message": f"Queued {req.mode} for {target} ({effective_model})",
             "events": [],
             "created_at": now,
             "updated_at": now,
@@ -822,7 +904,7 @@ def create_app(
         }
         state_cache["runs"][run_id] = record
         state_cache["run_subscribers"][run_id] = set()
-        task = asyncio.create_task(_run_pipeline_job(run_id, req.mode, payload))
+        task = asyncio.create_task(_run_pipeline_job(run_id, req.mode, payload, effective_model))
         state_cache["tasks"].add(task)
         task.add_done_callback(state_cache["tasks"].discard)
         return record
