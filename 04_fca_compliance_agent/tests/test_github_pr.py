@@ -9,8 +9,9 @@ from unittest import mock
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+from test_pipeline import _FakeComplianceAnalyzer
+
 from fca_compliance_agent import (
-    MockComplianceAnalyzer,
     MockConsumerCreditActAdapter,
     MockFCAHandbookAdapter,
     build_core_analysis_subgraph,
@@ -42,7 +43,7 @@ def _pipeline(checkpointer=None):
     core = build_core_analysis_subgraph(
         fca_port=MockFCAHandbookAdapter(),
         cca_port=MockConsumerCreditActAdapter(),
-        analyzer_port=MockComplianceAnalyzer(),
+        analyzer_port=_FakeComplianceAnalyzer(),
     )
     return build_pipeline_for_module(build_github_pr_review_module(), core_subgraph=core, checkpointer=checkpointer)
 
