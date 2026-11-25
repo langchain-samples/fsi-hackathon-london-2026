@@ -49,7 +49,8 @@ class GroundingTest(unittest.TestCase):
     def test_gdpr_is_searchable_in_default_scope(self) -> None:
         import asyncio
 
-        from fca_compliance_agent import AnalysisInput, MockFCAHandbookAdapter
+        from fakes import MockFCAHandbookAdapter
+        from fca_compliance_agent import AnalysisInput
 
         scope = AnalysisInput(target_id="t", source_type="pr_review", title="t").regulatory_scope
         hits = asyncio.run(MockFCAHandbookAdapter().search_rules("data minimisation personal data", sourcebooks=scope))

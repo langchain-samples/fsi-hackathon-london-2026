@@ -1,4 +1,4 @@
-"""Tests for the regulatory MCP server.
+"""Tests for the Consumer Credit Act 1974 regulatory MCP server.
 
 Written with `unittest` so they run in CI with `python -m unittest discover`, which installs no test runner. The
 server tests need the `mcp` extra and are skipped when it is not installed. The CCA parser and index tests need only
@@ -78,21 +78,17 @@ class CCACorpusTests(unittest.TestCase):
 
 @unittest.skipUnless(MCP_INSTALLED, "needs the mcp extra: uv sync --extra mcp")
 class ServerToolTests(unittest.TestCase):
-    def test_fca_search_filters_by_sourcebook_and_returns_nothing_for_no_match(self) -> None:
-        prin = asyncio.run(server_module.search_fca_handbook("consumer duty good outcomes", sourcebooks=["PRIN"]))
-        self.assertTrue(prin["results"])
-        self.assertTrue(all(r["reference"].startswith("PRIN") for r in prin["results"]))
-        nothing = asyncio.run(server_module.search_fca_handbook("quantum cryptography"))
-        self.assertEqual(nothing, {"results": []})
+    def test_server_exposes_only_real_cca_tools(self) -> None:
+        self.assertFalse(hasattr(server_module, "search_fca_handbook"))
+        self.assertFalse(hasattr(server_module, "get_fca_rule"))
+        self.assertTrue(hasattr(server_module, "query_consumer_credit_act"))
+        self.assertTrue(hasattr(server_module, "get_consumer_credit_act_document"))
 
-    def test_fca_search_returns_mock_handbook_passages(self) -> None:
-        result = asyncio.run(server_module.search_fca_handbook("affordability creditworthiness", top_k=3))
+    def test_query_consumer_credit_act_returns_real_statute_passages(self) -> None:
+        result = server_module.query_consumer_credit_act("withdraw within 14 days", top_k=3)
         refs = [r["reference"] for r in result["results"]]
-        self.assertIn("CONC 5.2A.4R", refs)
-        self.assertTrue(all(r["corpus"] == "mock" for r in result["results"]))
-
-    def test_get_fca_rule_unknown_reference_returns_empty(self) -> None:
-        self.assertEqual(asyncio.run(server_module.get_fca_rule("NOT A RULE")), {"results": []})
+        self.assertIn("CCA 1974 s.66A", refs)
+        self.assertTrue(all(r["corpus"] == "consumer_credit_act_1974" for r in result["results"]))
 
     def test_get_consumer_credit_act_document_contents_and_section(self) -> None:
         contents = server_module.get_consumer_credit_act_document()["results"]
@@ -108,32 +104,21 @@ class ServerToolTests(unittest.TestCase):
 
 @unittest.skipUnless(MCP_INSTALLED, "needs the mcp extra: uv sync --extra mcp")
 class StdioEndToEndTests(unittest.TestCase):
-    def test_agent_adapters_talk_to_server_over_stdio(self) -> None:
-        """The agent's own MCP adapters spawn this server over stdio and parse what it returns."""
+    def test_agent_cca_adapter_talks_to_server_over_stdio(self) -> None:
+        """The agent's MCPConsumerCreditActAdapter spawns this server over stdio and parses what it returns."""
         from fca_compliance_agent.adapters.regulatory.mcp import (
             MCPConsumerCreditActAdapter,
-            MCPFCAHandbookAdapter,
             MCPServerConfig,
         )
 
         config = MCPServerConfig(
             transport="stdio",
             command=sys.executable,
-            args=["-m", "fca_compliance_agent.mcp_server.server"],
+            args=("-m", "fca_compliance_agent.mcp_server.server"),
         )
 
         async def run() -> None:
-            fca = MCPFCAHandbookAdapter(server_config=config)
             cca = MCPConsumerCreditActAdapter(server_config=config)
-
-            fca_hits = await fca.search_rules("promotion representative APR", top_k=3)
-            self.assertTrue(fca_hits)
-            self.assertTrue(all(p.source == "fca_handbook" for p in fca_hits))
-            self.assertIn("CONC 3.5.7R", [p.reference for p in fca_hits])
-
-            rule = await fca.get_rule("PRIN 2A.2.1R")
-            self.assertIsNotNone(rule)
-            self.assertIn("good outcomes", rule.text)
 
             cca_hits = await cca.query_provisions("withdraw within 14 days", top_k=3)
             self.assertTrue(all(p.source == "consumer_credit_act" for p in cca_hits))

@@ -44,9 +44,12 @@ has_flag() {
 
 ensure_env_synced() {
   local venv_python="${REPO_ROOT}/.venv/bin/python"
-  local check_expr="import fca_compliance_agent, mcp"
-  if has_flag "--no-mcp" "$@"; then
-    check_expr="import fca_compliance_agent"
+  local check_expr="import fca_compliance_agent, mcp, qdrant_client, fastembed"
+  local extras=(--extra mcp --extra handbook-rag)
+
+  if [[ -n "${FCA_MCP_URL:-}" ]] || has_flag "--fca-mcp-url" "$@"; then
+    check_expr="import fca_compliance_agent, mcp"
+    extras=(--extra mcp)
   fi
 
   if [[ "${FORCE_UV_SYNC:-0}" != "1" && -x "${venv_python}" ]]; then
@@ -55,11 +58,11 @@ ensure_env_synced() {
     fi
   fi
 
-  echo "Syncing fca-compliance-agent dependencies (including mcp extra) with uv..." >&2
+  echo "Syncing fca-compliance-agent dependencies (${extras[*]}) with uv..." >&2
   if [[ -f "${REPO_ROOT}/uv.lock" ]]; then
-    uv sync --frozen --inexact --package fca-compliance-agent --extra mcp
+    uv sync --frozen --inexact --package fca-compliance-agent "${extras[@]}"
   else
-    uv sync --inexact --package fca-compliance-agent --extra mcp
+    uv sync --inexact --package fca-compliance-agent "${extras[@]}"
   fi
 }
 

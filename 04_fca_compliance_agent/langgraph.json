@@ -4,8 +4,7 @@
   ],
   "graphs": {
     "fca_compliance_pr_review": "fca_compliance_agent.agent:pr_review_agent",
-    "fca_compliance_codebase_review": "fca_compliance_agent.agent:codebase_review_agent",
-    "fca_compliance_product_spec": "fca_compliance_agent.agent:product_spec_agent"
+    "fca_compliance_codebase_review": "fca_compliance_agent.agent:codebase_review_agent"
   },
   "env": "../.env",
   "python_version": "3.13"
