@@ -1,0 +1,57 @@
+"""Driven Port protocols for external regulatory knowledge sources.
+
+Implemented externally via MCP servers (stdio or Streamable HTTP) in production,
+or via in-memory mock adapters for offline development and testing.
+"""
+
+from __future__ import annotations
+
+from typing import Protocol, runtime_checkable
+
+from ..domain.models import RegulatoryPassage
+
+
+@runtime_checkable
+class FCAHandbookPort(Protocol):
+    """Outbound port for querying the FCA Handbook RAG service."""
+
+    async def search_rules(
+        self,
+        query: str,
+        *,
+        sourcebooks: list[str] | None = None,
+        top_k: int = 5,
+    ) -> list[RegulatoryPassage]:
+        """Semantic or keyword search over FCA Handbook rules and guidance."""
+        ...
+
+    async def get_rule(self, reference: str) -> RegulatoryPassage | None:
+        """Fetch a specific FCA Handbook rule by canonical reference (e.g. 'CONC 4.2.5R')."""
+        ...
+
+
+@runtime_checkable
+class ConsumerCreditActPort(Protocol):
+    """Outbound port for querying or retrieving Consumer Credit Act 1974 provisions.
+
+    Intentionally supports both query-based retrieval AND direct section/document fetch
+    so any MCP server implementation (RAG search, section lookup, or full-document tool)
+    can satisfy this port without changing Core code.
+    """
+
+    async def query_provisions(
+        self,
+        query: str,
+        *,
+        sections: list[str] | None = None,
+        top_k: int = 5,
+    ) -> list[RegulatoryPassage]:
+        """Search Consumer Credit Act provisions relevant to a query."""
+        ...
+
+    async def get_document(
+        self,
+        section: str | None = None,
+    ) -> list[RegulatoryPassage]:
+        """Retrieve a specific CCA section or full/summary Act passages."""
+        ...
