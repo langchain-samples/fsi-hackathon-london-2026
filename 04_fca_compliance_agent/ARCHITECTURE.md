@@ -36,51 +36,40 @@ adapters/  ──▶  core/  ──▶  ports/  ──▶  domain/
 ### 2.1 Hexagonal Architecture Overview
 
 ```mermaid
-flowchart LR
-    subgraph Driving["Driving / Inbound Adapters (LangGraph Nodes or Subgraphs)"]
-        IN_PR["PR Review Inbound\n(gh pr diff -> AnalysisUnits)"]
-        IN_REPO["Codebase Inbound\n(git clone -> AnalysisUnits)"]
-        IN_PDF["Product Spec Inbound\n(PDF parse -> AnalysisUnits)"]
+flowchart TB
+    subgraph Driving["Inbound adapters (one per module)"]
+        direction LR
+        IN_PR["PR review<br/>gh pr diff"]
+        IN_REPO["Codebase<br/>git clone"]
+        IN_SPEC["Product spec<br/>PDF, Markdown or text"]
+        IN_PR ~~~ IN_REPO ~~~ IN_SPEC
     end
 
-    subgraph Hexagon["Core Compliance Agent (Hexagon Interior - LangGraph Subgraph)"]
-        TRIAGE["triage_units\n(Relevance Filter)"]
-        ANALYZE["analyze_unit x N\n(Parallel Send Fan-Out)"]
-        SYNTH["synthesize_report\n(Deduplicate & Verdict)"]
-        TRIAGE --> ANALYZE --> SYNTH
+    subgraph Hexagon["Core compliance agent (hexagon interior)"]
+        direction LR
+        TRIAGE["triage_units<br/>relevance filter"] --> ANALYZE["analyze_unit x N<br/>parallel fan-out"] --> SYNTH["synthesize_report<br/>deduplicate and verdict"]
     end
 
-    subgraph Gate["Optional Governance"]
-        HITL["human_review_gate\n(LangGraph interrupt)"]
+    HITL["human_review_gate<br/>optional LangGraph interrupt"]
+
+    subgraph Outbound["Outbound adapters (one per module)"]
+        direction LR
+        OUT_PR["PR comment<br/>gh pr comment"]
+        OUT_REPO["Remediation PR<br/>edit + git + gh pr create"]
+        OUT_SPEC["PDF report<br/>saved in reports/"]
+        OUT_PR ~~~ OUT_REPO ~~~ OUT_SPEC
     end
 
-    subgraph RegPorts["Driven Regulatory Ports (Protocols)"]
-        P_FCA["FCAHandbookPort"]
-        P_CCA["ConsumerCreditActPort"]
+    subgraph Regulatory["Regulatory ports and MCP adapters (stdio / Streamable HTTP)"]
+        direction TB
+        FCA["FCAHandbookPort<br/>MCPFCAHandbookAdapter"]
+        CCA["ConsumerCreditActPort<br/>MCPConsumerCreditActAdapter"]
     end
 
-    subgraph MCPAdapters["Driven MCP Adapters (Other Team's Servers)"]
-        M_FCA["MCPFCAHandbookAdapter\n(stdio / Streamable HTTP)"]
-        M_CCA["MCPConsumerCreditActAdapter\n(stdio / Streamable HTTP)"]
-    end
-
-    subgraph Outbound["Driven / Outbound Adapters (LangGraph Nodes or Agentic Subgraphs)"]
-        OUT_PR["PR Commenter Node\n(gh pr review)"]
-        OUT_REPO["Remediation Coding Subgraph\n(file edit + git + gh pr create)"]
-        OUT_PDF["PDF Report Generator Node\n(FindingsReport -> PDF)"]
-    end
-
-    IN_PR --> TRIAGE
-    IN_REPO --> TRIAGE
-    IN_PDF --> TRIAGE
-
-    ANALYZE -.-> P_FCA --> M_FCA
-    ANALYZE -.-> P_CCA --> M_CCA
-
-    SYNTH --> HITL
-    HITL --> OUT_PR
-    HITL --> OUT_REPO
-    HITL --> OUT_PDF
+    Driving -->|AnalysisInput| Hexagon
+    Hexagon -->|FindingsReport| HITL
+    HITL --> Outbound
+    Hexagon <-.->|"analyze_unit: rules"| Regulatory
 ```
 
 ### 2.2 Pipeline Execution & State Flow
@@ -119,81 +108,87 @@ sequenceDiagram
 
 ### 2.3 Agentic Architecture: Agents, LLM Steps, Functions & Tools
 
-Which parts reason, which parts are plain code, and which parts are tools. **The review of each change against the FCA Handbook and the Consumer Credit Act is a placeholder for an agent that is being built separately.** Until it lands, that step is fixed: code runs the searches and one LLM call judges the results. Triage and the executive summary are single LLM calls. Everything else is code.
+Which parts reason, which parts are plain code, and which parts are tools. **The review of each change against the FCA Handbook and the Consumer Credit Act is a placeholder for an agent that is being built separately.** Until it lands, that step is fixed: code runs the searches and one LLM call judges the results. Triage, the executive summary and each file that Module 2 remediates are single LLM calls. Everything else is code.
 
-`pr_review_agent` and `codebase_review_agent` are whole pipelines, not agents themselves.
+`pr_review_agent`, `codebase_review_agent` and `product_spec_agent` are whole pipelines, not agents themselves. `compliance_agent` puts chat in front of all three: see [section 6](#6-combined-graph--output-type).
+
+#### The pipeline
+
+Read from top to bottom. The purple step is expanded in the next diagram.
 
 ```mermaid
 flowchart TB
-    subgraph LEGEND["Legend"]
-        direction LR
-        L1["FUNCTION<br/>plain code"] ~~~ L2("LLM STEP<br/>one model call") ~~~ L3[/"TOOL<br/>called over MCP"/] ~~~ L4{"HUMAN<br/>decision"} ~~~ L5[["AGENT<br/>dashed: placeholder or planned"]]
-    end
-    LEGEND ~~~ START
+    IN["<b>inbound_adapter</b><br/>FUNCTION<br/>PR, codebase or product spec"]
+    TRI("<b>triage_units</b><br/>LLM STEP 1<br/>relevance and first queries")
+    AGENT[["<b>analyze_unit</b>, once per relevant change<br/>AGENT: PLACEHOLDER<br/>reviews against the FCA Handbook and the CCA"]]
+    RANK["<b>synthesize_report</b><br/>FUNCTION<br/>dedupe, rank, assign IDs, verdict"]
+    SUM("<b>Executive summary</b><br/>LLM STEP 3<br/>cannot change the verdict")
+    GATE{{"<b>human_review_gate</b><br/>optional HUMAN<br/>approve, filter or reject"}}
+    M1["<b>Module 1</b><br/>FUNCTION<br/>report and PR comment"]
+    M2("<b>Module 2</b><br/>LLM STEP 4, per file<br/>remediation PR")
+    M3["<b>Module 3</b><br/>FUNCTION<br/>report and PDF"]
 
-    START(["Caller"]) --> IN["inbound_adapter<br/>FUNCTION<br/>Real PR & repo adapters"]
-
-    subgraph CORE["core_analysis"]
-        TRI("triage_units<br/>LLM STEP 1<br/>relevance + first queries")
-        ROUTE["route_triaged_units<br/>FUNCTION<br/>one branch per relevant change"]
-
-        subgraph ANALYZE["analyze_unit x N"]
-            AGENT[["Review against FCA and CCA<br/>AGENT: PLACEHOLDER, built separately<br/>today: fixed searches + LLM STEP 2"]]
-            CHECK["Ground citations<br/>FUNCTION<br/>drops rules not retrieved"]
-        end
-
-        subgraph SYNTH["synthesize_report"]
-            RANK["Dedupe, rank, assign IDs, verdict<br/>FUNCTION"]
-            SUM("Executive summary<br/>LLM STEP 3<br/>cannot change the verdict")
-            REPORT["Assemble FindingsReport<br/>FUNCTION"]
-        end
-    end
-
-    subgraph TOOLS["MCP tools"]
-        FCA[/"TOOL: search_fca_handbook<br/>TOOL: get_fca_section<br/>FCA Handbook RAG"/]
-        CCA[/"TOOL: query_consumer_credit_act<br/>TOOL: get_consumer_credit_act_document<br/>CCA server"/]
-        CIT[/"TOOL: check_fca_citation<br/>FCA Handbook RAG<br/>not called yet"/]
-    end
-
-    GATE{"human_review_gate<br/>FUNCTION + optional HUMAN<br/>approve / filter / reject"}
-
-    subgraph OUT["outbound_adapter"]
-        OUTPR["Module 1: report + PR comment<br/>FUNCTION"]
-        OUTREPO["Module 2: remediation<br/>LLM STEP + Git/GH PR"]
-        OUTPDF["Module 3: PDF report<br/>(planned)"]
-    end
-
-    DONE(["DeliverableResult"])
-
-    IN --> TRI --> ROUTE
-    ROUTE -->|"relevant"| AGENT
-    ROUTE -->|"none relevant"| RANK
-    AGENT <-->|"today: called by code"| FCA & CCA
-    AGENT <-.->|"for the agent"| CIT
-    AGENT --> CHECK --> RANK --> SUM --> REPORT --> GATE
-    GATE -->|"approved or filtered"| OUTPR & OUTREPO & OUTPDF
-    GATE -->|"rejected"| DONE
-    OUTPR & OUTREPO & OUTPDF --> DONE
+    IN --> TRI --> AGENT --> RANK --> SUM --> GATE
+    GATE --> M1
+    GATE --> M2
+    GATE --> M3
 
     classDef fn fill:#e5e7eb,stroke:#4b5563,color:#111827
     classDef llm fill:#dbeafe,stroke:#1d4ed8,color:#111827
     classDef tool fill:#dcfce7,stroke:#15803d,color:#111827
     classDef human fill:#fef3c7,stroke:#b45309,color:#111827
-    classDef planned fill:#f3e8ff,stroke:#7e22ce,color:#111827,stroke-dasharray:6 4
-    class IN,ROUTE,CHECK,RANK,REPORT,OUTPR,OUTPDF,L1 fn
-    class TRI,SUM,L2 llm
-    class FCA,CCA,CIT,L3 tool
-    class GATE,L4 human
-    class AGENT,OUTREPO,L5 planned
+    classDef agent fill:#f3e8ff,stroke:#7e22ce,color:#111827,stroke-dasharray:6 4
+    class IN,RANK,M1,M3 fn
+    class TRI,SUM,M2 llm
+    class GATE human
+    class AGENT agent
 ```
 
-| Kind | What it means here | Parts |
-|---|---|---|
-| **Agent** | A model chooses its own tools and next step, in a loop | None built yet. Placeholder: the review in `analyze_unit`. Planned: Module 2 remediation |
-| **LLM step** | One model call with a fixed prompt and no tools | `triage_units`, the cross-check in `analyze_unit` (until the agent replaces it), the summary in `synthesize_report` |
-| **Function** | Plain code, no model | Inbound and outbound adapters, routing, retrieval, grounding citations, ranking, verdict, report |
-| **Tool** | Read-only, called over MCP (`handbook_rag` via `FCA_MCP_URL` / default `http://127.0.0.1:8765/mcp`; `fca-regulatory-mcp` via `CCA_MCP_URL` / stdio) | `search_fca_handbook`, `get_fca_section`, `check_fca_citation`, `query_consumer_credit_act`, `get_consumer_credit_act_document` |
-| **Human** | A person decides. Off by default (`require_human_approval=False`), so reports are auto-approved | `human_review_gate` |
+Two short cuts are left out of the picture: if no change is relevant, triage goes straight to `synthesize_report`, and if a person rejects the report, the gate ends the run. Only the module that was started runs. If its `output_type` is `report`, it delivers only the report.
+
+#### Inside `analyze_unit`
+
+```mermaid
+flowchart LR
+    UNIT(["One change"])
+
+    subgraph AGENT["AGENT: PLACEHOLDER, today these two fixed steps"]
+        direction TB
+        SEARCH["<b>Fixed searches</b><br/>FUNCTION"]
+        JUDGE("<b>Cross-check</b><br/>LLM STEP 2")
+        SEARCH --> JUDGE
+    end
+
+    GROUND["<b>Ground citations</b><br/>FUNCTION<br/>drops rules not retrieved"]
+    OUT(["Findings"])
+
+    subgraph TOOLS["MCP tools"]
+        direction TB
+        FCA["<b>FCA Handbook RAG</b><br/>search_fca_handbook<br/>get_fca_section<br/>check_fca_citation (not called yet)"]
+        CCA["<b>CCA server</b><br/>query_consumer_credit_act<br/>get_consumer_credit_act_document"]
+    end
+
+    UNIT --> AGENT --> GROUND --> OUT
+    AGENT <-.->|calls| TOOLS
+
+    classDef fn fill:#e5e7eb,stroke:#4b5563,color:#111827
+    classDef llm fill:#dbeafe,stroke:#1d4ed8,color:#111827
+    classDef tool fill:#dcfce7,stroke:#15803d,color:#111827
+    classDef human fill:#fef3c7,stroke:#b45309,color:#111827
+    classDef agent fill:#f3e8ff,stroke:#7e22ce,color:#111827,stroke-dasharray:6 4
+    class SEARCH,GROUND fn
+    class JUDGE llm
+    class FCA,CCA tool
+    class AGENT agent
+```
+
+| Kind | Colour | What it means here | Parts |
+|---|---|---|---|
+| **Agent** | Purple, dashed | A model chooses its own tools and next step, in a loop | None built yet. Placeholder: the review in `analyze_unit` |
+| **LLM step** | Blue | One model call with a fixed prompt and no tools | `triage_units`, the cross-check in `analyze_unit` (until the agent replaces it), the summary in `synthesize_report`, and `LangChainCodeRemediator` in Module 2 |
+| **Function** | Grey | Plain code, no model | Inbound and outbound adapters, routing, retrieval, grounding citations, ranking, verdict, report |
+| **Tool** | Green | Read-only, called over MCP (`handbook_rag` via `FCA_MCP_URL` / default `http://127.0.0.1:8765/mcp`; `fca-regulatory-mcp` via `CCA_MCP_URL` / stdio) | `search_fca_handbook`, `get_fca_section`, `check_fca_citation`, `query_consumer_credit_act`, `get_consumer_credit_act_document` |
+| **Human** | Amber | A person decides. Off by default (`require_human_approval=False`), so reports are auto-approved. From chat, it is on for anything that writes to GitHub | `human_review_gate` |
 
 **For the agent that fills the placeholder:** `FCAHandbookResearchPort` (`ports/regulatory.py`), which `MCPFCAHandbookAdapter` implements, offers `search` (breadth, snippets), `get_section` (depth, a whole section in order) and `check_citation` (is the quote word for word, and is the provision binding). Failures raise `MCPToolError`, so an error is never mistaken for a rule. Code should still check every quote after the agent answers.
 
@@ -325,7 +320,7 @@ Any callable (sync/async function) **or compiled LangGraph `StateGraph`** matchi
    - Calls `FCAHandbookPort.search_rules(...)` and `ConsumerCreditActPort.query_provisions(...)` / `get_document(...)` concurrently (`asyncio.gather`).
    - Invokes `ComplianceAnalyzerPort.analyze_unit(unit, fca_passages, cca_passages)` to cross-check the artefact against both regulatory texts and produce grounded `Finding` items.
    - Results merge into `PipelineState` / `CoreAnalysisState` via an append reducer (`Annotated[list[Finding], operator.add]`).
-3. **`synthesize_report`**: Deduplicates overlapping findings across units, sorts by severity (`critical` → `info`), assigns stable IDs (`F-001`, `F-002`, ...), computes the `overall_verdict`, and generates the `executive_summary` to emit the final `FindingsReport`.
+3. **`synthesize_report`**: Deduplicates overlapping findings across units, sorts by severity (`critical` → `info`), assigns stable IDs (`F-001`, `F-002`, ...), computes the `overall_verdict`, lists any part of the scope the FCA index does not hold (`scope_not_searched`; if that is all of the FCA scope, the verdict is at best `requires_manual_review`), and generates the `executive_summary` to emit the final `FindingsReport`.
 
 ### 5.2 Optional Human-in-the-Loop Gate (`human_review_gate`)
 

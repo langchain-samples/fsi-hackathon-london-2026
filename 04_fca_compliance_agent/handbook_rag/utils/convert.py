@@ -90,6 +90,27 @@ def chapters_of(tree: dict, sourcebooks: list[str]) -> list[dict]:
     return found
 
 
+def select_chapters(tree: dict, sourcebooks: list[str], only: list[str] | None = None) -> list[dict]:
+    """The chapters asked for. A name that is not in the Handbook, such as a typo, is refused and not skipped."""
+    found = chapters_of(tree, sourcebooks)
+    books, ids = {c["sourcebook"] for c in found}, {c["id"] for c in found}
+    if unknown := [name for name in sourcebooks if name not in books] + [i for i in only or [] if i not in ids]:
+        raise ValueError(f"not in the Handbook, or not in those sourcebooks: {', '.join(unknown)}")
+    return [c for c in found if not only or c["id"] in only]
+
+
+def _check_same_snapshot(folder: Path, manifest: Manifest) -> None:
+    """Never replace a snapshot with one of another day, or one that covers something else."""
+    path = folder / "manifest.json"
+    if not path.exists():
+        return
+    old = Manifest.model_validate_json(path.read_text(encoding="utf-8"))
+    if old.snapshot_date != manifest.snapshot_date:
+        raise ValueError(f"{folder} holds the snapshot of {old.snapshot_date}. Use another --out.")
+    if old.sourcebooks and (old.sourcebooks, old.chapters) != (manifest.sourcebooks, manifest.chapters):
+        raise ValueError(f"{folder} holds a snapshot of other sourcebooks or chapters. Use another --out.")
+
+
 def _is_deleted(text: str) -> bool:
     return re.fullmatch(r"\W*(deleted|not used|omitted)\W*", text, flags=re.IGNORECASE) is not None
 
@@ -124,7 +145,12 @@ def convert(folder: Path, day: str, sourcebooks: list[str], only: list[str] | No
     """Write the snapshot from the raw responses, if they are complete and make sense. Returns a report."""
     raw = folder / "raw"
     tree = json.loads((raw / "tree.json").read_text(encoding="utf-8"))
-    wanted = [c for c in chapters_of(tree, sourcebooks) if not only or c["id"] in only]
+    wanted = select_chapters(tree, sourcebooks, only)
+    manifest = Manifest(
+        snapshot_date=date.fromisoformat(day), source="fca-handbook-api", attribution=ATTRIBUTION,
+        sourcebooks=sorted(sourcebooks), chapters=sorted(only or []),
+    )  # fmt: skip
+    _check_same_snapshot(folder, manifest)
     provisions: list[Provision] = []
     skipped: list[str] = []
     deleted = records = joined = 0
@@ -165,7 +191,6 @@ def convert(folder: Path, day: str, sourcebooks: list[str], only: list[str] | No
 
     _write(folder / "provisions.jsonl", provisions)
     _write(folder / "glossary.jsonl", list(glossary.values()))
-    manifest = Manifest(snapshot_date=date.fromisoformat(day), source="fca-handbook-api", attribution=ATTRIBUTION)
     (folder / "manifest.json").write_text(manifest.model_dump_json(indent=2) + "\n", encoding="utf-8")
     Snapshot.load(folder)  # the same checks that ingest makes
     return {

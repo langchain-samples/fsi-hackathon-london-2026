@@ -36,7 +36,8 @@ uv run --no-sync python -m scripts.ingest data/snapshots/<date>
 ```
 
 That is SYSC, PRIN, COBS, CONC and the Glossary: 130 chapters, about 5 minutes to download and 3 to embed. The text
-and the index stay on this machine (both are git-ignored). © FCA, used under the Open Government Licence v3.0.
+and the index stay on this machine (both are git-ignored). A partial download (`--sourcebooks`, `--chapters`) goes into a
+folder of its own, and a snapshot is never replaced by one of another day or coverage. © FCA, used under the Open Government Licence v3.0.
 
 ## Try it offline
 

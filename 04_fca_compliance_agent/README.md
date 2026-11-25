@@ -161,7 +161,8 @@ FCA_MCP_URL=http://127.0.0.1:8765/mcp
 CCA_MCP_URL=http://127.0.0.1:8001/mcp
 ```
 
-Each person loads the real text first (SYSC, PRIN, COBS, CONC and the Glossary): see its README.
+Each person loads the real text first (SYSC, PRIN, COBS, CONC and the Glossary): see its README. It has no UK GDPR, so
+those rules are not searched, and the report lists that under "Not checked".
 
 ## Swapping Context Modules
 

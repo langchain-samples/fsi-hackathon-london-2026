@@ -51,7 +51,12 @@ from fca_compliance_agent import (
     build_github_pr_review_module,
     build_pipeline_for_module,
 )
-from fca_compliance_agent.adapters.github_codebase import FileRemediationResult
+from fca_compliance_agent.adapters.github_codebase import (
+    FileRemediationResult,
+    render_codebase_markdown,
+    render_remediation_pr_body,
+)
+from fca_compliance_agent.adapters.github_pr import render_markdown
 
 _SAMPLE_PR_DIFF = """diff --git a/src/underwriting/approve.py b/src/underwriting/approve.py
 index 1111111..2222222 100644
@@ -559,9 +564,12 @@ class TestMCPErrorsAreNotEvidence(unittest.IsolatedAsyncioTestCase):
 
             return MCPConsumerCreditActAdapter(caller=caller)
 
-        self.assertEqual(await failing("Error executing tool: no section 999").get_document("999"), [])
-        with self.assertRaises(MCPToolError):
-            await failing("Unknown tool: get_consumer_credit_act_document").get_document("66A")
+        name = "get_consumer_credit_act_document"
+        missing = f"Error executing tool {name}: CCA 1974 has no section 999. Check the number."
+        self.assertEqual(await failing(missing).get_document("999"), [])
+        for text in (f"Unknown tool: {name}", f"Error executing tool {name}", "Server is overloaded"):
+            with self.subTest(text), self.assertRaises(MCPToolError):
+                await failing(text).get_document("66A")
 
     async def test_success_and_empty_results_still_work(self) -> None:
         payload = json.dumps([{"reference": "CONC 5.2A.4R", "text": "An error in the rule text."}])
@@ -576,6 +584,174 @@ class TestMCPErrorsAreNotEvidence(unittest.IsolatedAsyncioTestCase):
         passages = await MCPFCAHandbookAdapter(caller=found).search_rules("affordability")
         self.assertEqual([p.reference for p in passages], ["CONC 5.2A.4R"])
         self.assertEqual(await MCPFCAHandbookAdapter(caller=nothing).search_rules("x"), [])
+
+
+def _rag(tools: dict[str, Any], calls: list[str] | None = None):
+    """A caller for a server with these tools. A result that is a string is that tool's error."""
+
+    async def caller(name: str, arguments: dict[str, Any]) -> Any:
+        if calls is not None:
+            calls.append(name)
+        result = tools.get(name, f"Unknown tool: {name}")
+        if isinstance(result, str):
+            return SimpleNamespace(is_error=True, content=[SimpleNamespace(text=result)], structured_content=None)
+        return SimpleNamespace(is_error=False, content=[], structured_content=result)
+
+    return caller
+
+
+class TestHandbookRAGServer(unittest.IsolatedAsyncioTestCase):
+    """Servers offer different tools: the Handbook RAG has no get_fca_rule, and others have no get_fca_section."""
+
+    def _section(self, *references: str) -> dict[str, Any]:
+        rows = [{"reference": r, "text": f"Text of {r}", "provision_type": r[-1]} for r in references]
+        return {"section": "CONC 5.2A", "complete": True, "results": rows}
+
+    async def test_get_rule_reads_the_section_and_never_gives_a_neighbour(self) -> None:
+        fca = MCPFCAHandbookAdapter(
+            caller=_rag({"get_fca_section": self._section("CONC 5.2A.3R", "CONC 5.2A.4R", "CONC 5.2A.4AR")})
+        )
+        for reference, expected in (
+            ("CONC 5.2A.4R", "CONC 5.2A.4R"),
+            ("conc 5.2A.4 r", "CONC 5.2A.4R"),
+            ("CONC 5.2A.4", "CONC 5.2A.4R"),
+            ("CONC 5.2A", None),
+            ("CONC 5.2A.9R", None),
+        ):
+            with self.subTest(reference):
+                rule = await fca.get_rule(reference)
+                self.assertEqual(rule and rule.reference, expected)
+
+    async def test_get_rule_tells_a_missing_rule_from_a_failure(self) -> None:
+        missing = "Error executing tool get_fca_section: CONC 9.9.9R is not in force in the index. Do not cite it."
+        self.assertIsNone(await MCPFCAHandbookAdapter(caller=_rag({"get_fca_section": missing})).get_rule("CONC 9.9.9R"))
+        for failure in ("There is no Handbook index called 'x'.", "Error executing tool get_fca_section"):
+            with self.subTest(failure), self.assertRaises(MCPToolError):
+                await MCPFCAHandbookAdapter(caller=_rag({"get_fca_section": failure})).get_rule("CONC 5.2A.4R")
+
+    async def test_get_rule_uses_a_rule_tool_that_the_mapping_names(self) -> None:
+        async def ask(tools: dict[str, Any]) -> RegulatoryPassage | None:
+            mapping = MCPToolMapping(
+                search_tool="search_fca_handbook", fetch_tool="get_fca_rule", section_tool="get_fca_section"
+            )
+            return await MCPFCAHandbookAdapter(caller=_rag(tools), tool_mapping=mapping).get_rule("CONC 5.2A.4R")
+
+        section = self._section("CONC 5.2A.3R", "CONC 5.2A.4R")
+        found = {"results": [{"reference": "CONC 5.2A.4R", "text": "From the rule tool."}]}
+        self.assertEqual((await ask({"get_fca_rule": found})).text, "From the rule tool.")
+        self.assertEqual((await ask({"get_fca_section": section})).reference, "CONC 5.2A.4R")  # the server lacks the tool
+        with self.assertRaises(MCPToolError):  # the tool exists, and failed
+            await ask({"get_fca_rule": "boom", "get_fca_section": section})
+
+    async def test_a_custom_mapping_only_calls_the_tools_it_names(self) -> None:
+        calls: list[str] = []
+        rows = {"results": [{"reference": "CONC 1.1.1R", "text": "Cut short [...]"}]}
+        fca = MCPFCAHandbookAdapter(
+            caller=_rag({"my_search": rows}, calls), tool_mapping=MCPToolMapping(search_tool="my_search")
+        )
+        self.assertEqual([p.text for p in await fca.search_rules("x")], ["Cut short [...]"])
+        self.assertEqual(calls, ["my_search"])
+        for call in (lambda: fca.get_section("CONC 1.1"), lambda: fca.check_citation("CONC 1.1.1R", "x")):
+            with self.assertRaises(MCPToolError):
+                await call()
+
+    async def test_every_envelope_gives_the_same_passages(self) -> None:
+        rows = [{"reference": "CONC 1.1.1R", "text": "A firm must."}]
+        body = {"results": rows, "not_in_index": ["DISP"]}
+        block = {"type": "text", "text": json.dumps(body)}
+        for envelope in (
+            body,
+            {"isError": False, "content": [block]},
+            {"content": [], "structuredContent": body},
+            SimpleNamespace(is_error=False, content=[], structured_content=body),
+            SimpleNamespace(isError=False, content=[], structuredContent=body),
+            SimpleNamespace(is_error=False, content=[SimpleNamespace(text=block["text"])], structured_content=None),
+        ):
+
+            async def caller(name: str, arguments: dict[str, Any], result: Any = envelope) -> Any:
+                return result
+
+            with self.subTest(envelope):
+                fca = MCPFCAHandbookAdapter(caller=caller)
+                found = await fca.search("x")
+                self.assertEqual(([p.text for p in found.passages], found.not_in_index), (["A firm must."], ["DISP"]))
+                self.assertEqual((await fca.search_rules_in_scope("x")).not_in_index, ["DISP"])
+                self.assertEqual([p.text for p in await fca.search_rules("x")], ["A firm must."])
+
+    async def test_lists_and_plain_passages_still_work(self) -> None:
+        row = {"reference": "CONC 1.1.1R", "content": "A firm must."}
+        for payload in (
+            row,
+            [row],
+            SimpleNamespace(is_error=False, content=[], structured_content={"result": [row]}),
+        ):
+
+            async def caller(name: str, arguments: dict[str, Any], result: Any = payload) -> Any:
+                return result
+
+            with self.subTest(payload):
+                passages = await MCPFCAHandbookAdapter(caller=caller).search_rules("x")
+                self.assertEqual([p.text for p in passages], ["A firm must."])
+
+    async def test_a_result_without_the_expected_keys_is_an_error(self) -> None:
+        fca = MCPFCAHandbookAdapter(
+            caller=_rag({n: {"other": 1} for n in ("search_fca_handbook", "get_fca_section", "check_fca_citation")})
+        )
+        for call in (
+            lambda: fca.search("x"),
+            lambda: fca.get_section("CONC 1.1"),
+            lambda: fca.check_citation("CONC 1.1.1R", "x"),
+        ):
+            with self.assertRaises(MCPToolError):
+                await call()
+
+
+class TestScopeThatWasNotSearched(unittest.IsolatedAsyncioTestCase):
+    """A report must say which part of its scope no rule was looked up in."""
+
+    async def _report(self, scope: list[str], not_in_index: list[str]):
+        class NoFindings(_FakeComplianceAnalyzer):
+            async def analyze_unit(self, **_: Any) -> list[Finding]:
+                return []
+
+        body = {"results": [], "not_in_index": not_in_index}
+        core = build_core_analysis_subgraph(
+            fca_port=MCPFCAHandbookAdapter(caller=_rag({"search_fca_handbook": body})),
+            cca_port=MockConsumerCreditActAdapter(),
+            analyzer_port=NoFindings(),
+        )
+        unit = AnalysisUnit(
+            unit_id="u1",
+            title="Loan approval",
+            content="skip_affordability = True",
+            location={"kind": "generic", "reference": "x"},
+        )
+        given = AnalysisInput(
+            target_id="t", source_type="codebase", title="t", units=[unit], regulatory_scope=scope
+        )
+        return (await core.ainvoke({"analysis_input": given}))["findings_report"]
+
+    async def test_part_of_the_scope(self) -> None:
+        report = await self._report(
+            ["CONC", "UK GDPR", "Consumer Credit Act 1974"], ["UK GDPR", "CONSUMER CREDIT ACT 1974"]
+        )
+        self.assertEqual((report.overall_verdict, report.scope_not_searched), ("compliant", ["UK GDPR"]))
+        for text in (
+            render_markdown(report),
+            render_codebase_markdown(report),
+            render_remediation_pr_body(report, change_summaries={}),
+        ):
+            self.assertIn("**Not checked:** UK GDPR", text)
+
+    async def test_none_of_the_fca_scope(self) -> None:
+        report = await self._report(["DISP", "Consumer Credit Act 1974"], ["DISP", "CONSUMER CREDIT ACT 1974"])
+        self.assertEqual((report.overall_verdict, report.scope_not_searched), ("requires_manual_review", ["DISP"]))
+
+    async def test_all_of_the_scope(self) -> None:
+        for scope, missing in ((["CONC"], []), (["Consumer Credit Act 1974"], ["CONSUMER CREDIT ACT 1974"])):
+            report = await self._report(scope, missing)
+            self.assertEqual((report.overall_verdict, report.scope_not_searched), ("compliant", []))
+            self.assertNotIn("Not checked", render_markdown(report))
 
 
 class TestHexagonalArchitectureBoundaries(unittest.TestCase):

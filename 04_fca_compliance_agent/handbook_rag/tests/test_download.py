@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from scripts.download import download
+from scripts.download import SOURCEBOOKS, default_folder, download
 from utils.convert import convert, to_text
 from utils.fca_api import HOST, FCAError, HandbookAPI, read_token
 from utils.schema import Snapshot
@@ -105,6 +105,43 @@ def test_an_interrupted_download_continues(tmp_path):
     assert run(tmp_path, [record("XSYS 4.1.1")]).requests == []
     (tmp_path / "raw" / "chapters" / "xsys4.json").unlink()
     assert len(run(tmp_path, [record("XSYS 4.1.1")]).requests) == 1
+
+
+def test_a_download_is_not_continued_on_another_day(tmp_path):
+    run(tmp_path, [record("XSYS 4.1.1")])
+    convert(tmp_path, DAY, ["XSYS"])
+    for day_recorded in (True, False):  # an older download has no day.txt
+        if not day_recorded:
+            (tmp_path / "raw" / "day.txt").unlink()
+        fake = FakeAPI([record("XSYS 4.1.1")])
+        with HandbookAPI(TOKEN, transport=httpx.MockTransport(fake), pause=0) as api:
+            with pytest.raises(FCAError, match=f"was downloaded for {DAY}, not 2026-11-28"):
+                download(api, tmp_path, "2026-11-28", ["XSYS"])
+        assert fake.requests == []
+    with pytest.raises(ValueError, match=f"the snapshot of {DAY}"):
+        convert(tmp_path, "2026-11-28", ["XSYS"])
+    assert Snapshot.load(tmp_path).manifest.snapshot_date.isoformat() == DAY
+
+
+def test_a_partial_download_never_replaces_a_full_one(tmp_path):
+    assert default_folder(DAY, SOURCEBOOKS).name == DAY == default_folder(DAY, SOURCEBOOKS[::-1]).name
+    assert default_folder(DAY, ["CONC"], ["conc5"]).name == f"{DAY}-conc-conc5"
+    run(tmp_path, [record("XSYS 4.1.1")])
+    convert(tmp_path, DAY, ["XSYS"])
+    before = (tmp_path / "provisions.jsonl").read_bytes()
+    with pytest.raises(ValueError, match="other sourcebooks or chapters"):
+        convert(tmp_path, DAY, ["XSYS"], ["xsys4"])
+    assert (tmp_path / "provisions.jsonl").read_bytes() == before
+    assert convert(tmp_path, DAY, ["XSYS"])["provisions"] == 1
+
+
+@pytest.mark.parametrize(("books", "only", "unknown"), [(["XSYS", "XSYZ"], None, "XSYZ"), (["XSYS"], ["xsys4", "xsys99"], "xsys99")])
+def test_a_name_that_is_not_in_the_handbook_is_refused(tmp_path, books, only, unknown):
+    fake = FakeAPI([record("XSYS 4.1.1")])
+    with HandbookAPI(TOKEN, transport=httpx.MockTransport(fake), pause=0) as api:
+        with pytest.raises(ValueError, match=f"not in the Handbook.*: {unknown}$"):
+            download(api, tmp_path, DAY, books, only)
+    assert len(fake.requests) == 1  # only the list of chapters
 
 
 def test_rate_limits_and_server_errors_are_retried(tmp_path):

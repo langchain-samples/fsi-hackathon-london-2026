@@ -89,6 +89,9 @@ def test_the_core_agents_adapter_works_with_this_server(http_server):
         found = await adapter.search_rules("XSYS 4.2.1R", top_k=3)
         assert found[0].reference == "XSYS 4.2.1R" and found[0].metadata["source"] == "fictional-sample"
         assert await adapter.search_rules("testing", sourcebooks=["CONC", "PRIN 2A"]) == []
+        assert (await adapter.search_rules_in_scope("testing", sourcebooks=["CONC"])).not_in_index == ["CONC"]
+        assert (await adapter.get_rule("XSYS 4.2.1R")).reference == "XSYS 4.2.1R"
+        assert await adapter.get_rule("XSYS 4.2.9R") is None
         # The fixed review step judges on search_rules, so it must get whole rules and not snippets.
         long = await adapter.search_rules("XBIG 1.1.1R", top_k=1)
         assert long[0].text == LONG_RULE

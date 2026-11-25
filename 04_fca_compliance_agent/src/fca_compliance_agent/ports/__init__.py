@@ -2,7 +2,12 @@
 
 from .adapters import ContextModule, InboundAdapterNode, OutboundAdapterNode
 from .llm import ComplianceAnalyzerPort
-from .regulatory import ConsumerCreditActPort, FCAHandbookPort, FCAHandbookResearchPort
+from .regulatory import (
+    ConsumerCreditActPort,
+    FCAHandbookPort,
+    FCAHandbookResearchPort,
+    FCAScopedSearchPort,
+)
 
 __all__ = [
     "ComplianceAnalyzerPort",
@@ -10,6 +15,7 @@ __all__ = [
     "ContextModule",
     "FCAHandbookPort",
     "FCAHandbookResearchPort",
+    "FCAScopedSearchPort",
     "InboundAdapterNode",
     "OutboundAdapterNode",
 ]

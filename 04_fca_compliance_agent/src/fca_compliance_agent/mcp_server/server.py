@@ -22,6 +22,7 @@ import functools
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from .cca_corpus import CCAIndex, CCAPassage, CCASection, load_cca, normalise_section
 
@@ -35,6 +36,10 @@ mcp = MCPServer(
         "is not evidence that the Act does not apply."
     ),
 )
+
+
+class UnknownSectionError(ToolError, ValueError):
+    """The Act has no such section. A ToolError, because MCP hides the message of any other exception from the caller."""
 
 
 @functools.lru_cache(maxsize=1)
@@ -104,7 +109,7 @@ def get_consumer_credit_act_document(section: str | None = None) -> dict[str, An
         }
     found = index.get(section)
     if found is None:
-        raise ValueError(
+        raise UnknownSectionError(
             f"CCA 1974 has no section {normalise_section(section)}. "
             "Check the number, or search with query_consumer_credit_act."
         )
