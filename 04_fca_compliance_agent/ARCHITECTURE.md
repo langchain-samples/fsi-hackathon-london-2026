@@ -158,6 +158,12 @@ flowchart TB
     AGTOOLS[/"TOOLS (planned)<br/>read_file, edit_file, run_tests,<br/>git_checkout_commit, gh pr create"/]
     DONE(["DeliverableResult"])
 
+    subgraph LEGEND["Legend"]
+        direction LR
+        L1["FUNCTION<br/>plain code"] ~~~ L2("LLM STEP<br/>one model call") ~~~ L3[/"TOOL<br/>called over MCP"/] ~~~ L4{"HUMAN<br/>decision"} ~~~ L5["AGENT<br/>planned"] ~~~ L6[/"TOOL<br/>planned"/]
+    end
+    LEGEND ~~~ START
+
     IN --> TRI --> ROUTE
     ROUTE -->|"relevant units"| RET
     ROUTE -->|"no relevant units"| RANK
@@ -174,12 +180,12 @@ flowchart TB
     classDef human fill:#fef3c7,stroke:#b45309,color:#111827
     classDef agent fill:#f3e8ff,stroke:#7e22ce,color:#111827,stroke-dasharray:6 4
     classDef planned fill:#dcfce7,stroke:#15803d,color:#111827,stroke-dasharray:6 4
-    class IN,ROUTE,RET,RANK,REPORT,OUTPR,OUTPDF fn
-    class TRI,CHECK,SUM llm
-    class FCA,CCA,CCADOC tool
-    class GATE human
-    class OUTREPO agent
-    class AGTOOLS planned
+    class IN,ROUTE,RET,RANK,REPORT,OUTPR,OUTPDF,L1 fn
+    class TRI,CHECK,SUM,L2 llm
+    class FCA,CCA,CCADOC,L3 tool
+    class GATE,L4 human
+    class OUTREPO,L5 agent
+    class AGTOOLS,L6 planned
 ```
 
 **Legend:** grey = deterministic function, blue (rounded) = LLM step, green (slanted) = tool, amber = human decision, purple = planned agent. Dashed outline = not built yet, at least in part. Each pipeline uses one outbound module. The MCP tools are mock adapters unless `FCA_MCP_URL` and `CCA_MCP_URL` are set.
