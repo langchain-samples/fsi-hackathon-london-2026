@@ -28,6 +28,15 @@ def reg_agent():
     return _agent
 
 
+def document_text(document_id: str) -> str:
+    """The regulation's own text from the 03 library, with its paragraph numbers; "" if it is not in the library."""
+    try:
+        document = load_project(FOLDER)["tools.documents"].get_document(document_id)
+    except ValueError:
+        return ""
+    return "\n\n".join(f"## {s['number']}. {s['title']}\n\n{s['text']}" for s in document["sections"])
+
+
 def active_policy(store: BaseStore, firm_id: str = memory.DEFAULT_FIRM) -> PolicyParams:
     raw = memory.get_policy_dict(store, firm_id)
     return PolicyParams(**raw) if raw else BASELINE
@@ -45,7 +54,7 @@ def run_reg(document_id: str, firm_id: str, store: BaseStore, model: str = MODEL
 
 def publish_policy_from_brief(document_id: str, brief: str, firm_id: str, store: BaseStore, model: str = MODEL,
                               auto_approve: bool = False, extractor=extract_policy) -> dict:
-    proposed = extractor(brief, document_id, model)
+    proposed = extractor(brief, document_id, model, source_text=document_text(document_id))
     changes = diff(active_policy(store, firm_id), proposed)
     memory.log_event(store, "reg", f"{document_id} proposes {len(changes)} control changes", {"changes": changes})
     case_id = f"policy:{firm_id}:{document_id}"

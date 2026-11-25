@@ -61,6 +61,18 @@ def count_recent_alerts(alerts: list[dict], now: str, window_days: int) -> int:
     return sum(1 for a in alerts if start <= datetime.fromisoformat(a["timestamp"]) <= end)
 
 
+def start_replay(store: BaseStore, user_id: str) -> None:
+    """Forget a customer's earlier monitoring run, so the same transactions can be replayed under a new policy.
+
+    Clears the alerts, and the 02 agent's own decisions and reviewer notes. Without this the reviewer's notes from
+    the first run (for example "booked a flight to a conference") make the agent sure of the same payments on the
+    replay, and the before/after comparison stops being like for like.
+    """
+    for namespace in (("alerts", user_id), ("decisions", user_id), ("customer_notes", user_id)):
+        for item in store.search(namespace, limit=1000):
+            store.delete(namespace, item.key)
+
+
 def _thread(user_id: str, tag: str) -> dict:
     return {"configurable": {"thread_id": f"tm-{user_id}-{tag}"}}
 

@@ -75,7 +75,7 @@ class ScriptedModel(BaseChatModel):
                 return schema(**PROFILES[_who(text)])
             if name == "StatedFacts":
                 return schema(**FACTS[_who(text)])
-            if name == "PolicyParams":
+            if name in ("PolicyParams", "PolicyExtraction"):
                 return PS26_7_REFERENCE.model_copy()
             raise NotImplementedError(f"No script for {name}")
         return RunnableLambda(answer)
