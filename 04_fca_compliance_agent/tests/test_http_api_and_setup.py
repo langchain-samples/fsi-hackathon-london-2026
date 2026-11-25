@@ -208,6 +208,18 @@ class TestComplianceHttpApi(unittest.TestCase):
         self.assertEqual(final["findings_report"]["overall_verdict"], "non_compliant")
         self.assertEqual(len(final["findings_report"]["findings"]), 2)
         self.assertEqual(self.mock_gh.created_prs, [])  # create_pr=False stays read-only
+        stages = [evt["stage"] for evt in final["events"]]
+        self.assertIn("inbound", stages)
+        self.assertIn("triage", stages)
+        self.assertIn("analyze", stages)
+        self.assertIn("synthesize", stages)
+        self.assertIn("completed", stages)
+
+        sse = self.client.get(f"/api/runs/{run_id}/events")
+        self.assertEqual(sse.status_code, 200)
+        self.assertIn("text/event-stream", sse.headers["content-type"])
+        self.assertIn("event: progress", sse.text)
+        self.assertIn("event: done", sse.text)
 
         pr_start = self.client.post(
             "/api/runs",
