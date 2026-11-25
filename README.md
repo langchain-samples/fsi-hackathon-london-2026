@@ -24,6 +24,7 @@ and LangSmith. Each topic has its own folder and README:
 
 | Folder | Topic | What you build |
 |--------|-------|----------------|
+| [`00_dcode_setup`](00_dcode_setup/README.md) | Deep Agents Code setup | Install and configure `dcode`, a terminal coding agent that helps you build and debug the agents below (optional) |
 | [`01_kyc_agent`](01_kyc_agent/README.md) | KYC onboarding | A LangGraph agent that extracts application details, screens against sanctions and PEP lists, and scores risk |
 | [`02_transaction_monitoring_agent`](02_transaction_monitoring_agent/README.md) | Transaction monitoring | A deep agent with memory and human review, then evaluated and improved with LangSmith |
 | [`03_document_summary_agent`](03_document_summary_agent/README.md) | Compliance brief | A LangGraph map-reduce workflow that summarises a long regulatory document into a reviewable brief |
@@ -51,6 +52,22 @@ cd 01_kyc_agent
 ```
 
 Then follow [`01_kyc_agent/README.md`](01_kyc_agent/README.md).
+
+## Deep Agents Code (optional)
+
+Deep Agents Code (`dcode`) is a terminal coding agent you can use alongside the workshops. It is installed as a
+standalone tool, separate from the shared `.venv`, and keeps its own settings in `~/.deepagents/.env`:
+
+```bash
+uv tool install deepagents-code
+mkdir -p ~/.deepagents
+cp 00_dcode_setup/.env.example ~/.deepagents/.env
+chmod 600 ~/.deepagents/.env
+# Edit ~/.deepagents/.env: set ATTENDEE_NAME, your LangSmith API key and workspace ID
+```
+
+Then run `dcode` from any topic folder. See [`00_dcode_setup/README.md`](00_dcode_setup/README.md) for the full
+setup and troubleshooting.
 
 ## Environment variables
 
