@@ -1,28 +1,42 @@
 """Live compliance runner using the real LLM configured in repo root `.env`.
 
-Usage (from repo root, once `.env` is populated):
-    # Scan a real GitHub repo (defaults to natchainsix/quicklend-nc)
-    uv run --no-sync --package fca-compliance-agent python 04_fca_compliance_agent/scripts/run_draft_test.py
-    uv run --no-sync --package fca-compliance-agent python 04_fca_compliance_agent/scripts/run_draft_test.py --repo-url https://github.com/natchainsix/quicklend-nc
+By default, automatically starts the local `fca-regulatory-mcp` HTTP server in the
+background and tears it down cleanly when the run finishes.
 
-    # Point at a running fca-regulatory-mcp HTTP server
-    uv run --no-sync --package fca-compliance-agent python 04_fca_compliance_agent/scripts/run_draft_test.py --mcp-url http://127.0.0.1:8001/mcp
+Usage (recommended via wrapper script, which also automates `uv` and `--extra mcp`):
+    # Scan the default GitHub repo (natchainsix/quicklend-nc) with auto-bootstrapped MCP
+    ./04_fca_compliance_agent/scripts/run.sh
+    ./04_fca_compliance_agent/scripts/run.sh --repo-url https://github.com/natchainsix/quicklend-nc
+
+    # Point at an already-running external MCP HTTP server instead of auto-bootstrapping
+    ./04_fca_compliance_agent/scripts/run.sh --mcp-url http://127.0.0.1:8001/mcp
+
+    # Run offline against in-memory mock regulatory adapters (no MCP server)
+    ./04_fca_compliance_agent/scripts/run.sh --no-mcp
 
     # Review a real PR or run the built-in synthetic diff
-    uv run --no-sync --package fca-compliance-agent python 04_fca_compliance_agent/scripts/run_draft_test.py --module pr_review
-    uv run --no-sync --package fca-compliance-agent python 04_fca_compliance_agent/scripts/run_draft_test.py --module pr_review --pr-url https://github.com/owner/repo/pull/1
+    ./04_fca_compliance_agent/scripts/run.sh --module pr_review
+    ./04_fca_compliance_agent/scripts/run.sh --module pr_review --pr-url https://github.com/owner/repo/pull/1
 
     # Product spec stub review
-    uv run --no-sync --package fca-compliance-agent python 04_fca_compliance_agent/scripts/run_draft_test.py --module product_spec
+    ./04_fca_compliance_agent/scripts/run.sh --module product_spec
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
+import signal
 from typing import Any
+
+from fca_compliance_agent.mcp_server.bootstrap import (
+    DEFAULT_MCP_PORT,
+    managed_mcp_server,
+    resolve_mcp_mode,
+)
 
 _SYNTHETIC_PR_DIFF = """diff --git a/src/underwriting/approve.py b/src/underwriting/approve.py
 index 1111111..2222222 100644
@@ -72,31 +86,67 @@ def _build_payload(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-async def _run(args: argparse.Namespace) -> None:
-    if args.mcp_url:
-        os.environ["FCA_MCP_URL"] = args.mcp_url
-        os.environ["CCA_MCP_URL"] = args.mcp_url
+def _build_agent(module_name: str, *, use_mocks: bool):
+    from fca_compliance_agent.adapters.github_codebase import build_github_codebase_review_module
+    from fca_compliance_agent.adapters.github_pr import build_github_pr_review_module
+    from fca_compliance_agent.adapters.outbound import build_product_spec_module
+    from fca_compliance_agent.adapters.regulatory import (
+        MockConsumerCreditActAdapter,
+        MockFCAHandbookAdapter,
+    )
+    from fca_compliance_agent.agent import build_default_core_subgraph
+    from fca_compliance_agent.core import build_pipeline_for_module
 
-    from fca_compliance_agent.agent import (
-        codebase_review_agent,
-        pr_review_agent,
-        product_spec_agent,
+    if use_mocks:
+        core = build_default_core_subgraph(
+            fca_port=MockFCAHandbookAdapter(),
+            cca_port=MockConsumerCreditActAdapter(),
+        )
+    else:
+        core = build_default_core_subgraph()
+
+    module_builders = {
+        "codebase_review": build_github_codebase_review_module,
+        "pr_review": build_github_pr_review_module,
+        "product_spec": build_product_spec_module,
+    }
+    return build_pipeline_for_module(module_builders[module_name](), core_subgraph=core)
+
+
+async def _run(args: argparse.Namespace) -> None:
+    from fca_compliance_agent.adapters.llm.langchain_llm import load_repo_env
+
+    load_repo_env()
+    external_url, should_bootstrap = resolve_mcp_mode(
+        mcp_url=args.mcp_url,
+        no_mcp=args.no_mcp,
     )
 
-    agents = {
-        "codebase_review": codebase_review_agent,
-        "pr_review": pr_review_agent,
-        "product_spec": product_spec_agent,
-    }
-    agent = agents[args.module]
-    payload = _build_payload(args)
+    with contextlib.ExitStack() as stack:
+        if args.no_mcp:
+            print("Regulatory adapters: in-memory mock adapters (--no-mcp)")
+        elif should_bootstrap:
+            preferred_port = args.mcp_port if args.mcp_port is not None else DEFAULT_MCP_PORT
+            mcp_url = stack.enter_context(
+                managed_mcp_server(
+                    port=preferred_port,
+                    strict_port=args.mcp_port is not None,
+                )
+            )
+            os.environ["FCA_MCP_URL"] = mcp_url
+            os.environ["CCA_MCP_URL"] = mcp_url
+            print(f"Started background regulatory MCP server: {mcp_url}")
+        else:
+            if args.mcp_url:
+                os.environ["FCA_MCP_URL"] = args.mcp_url
+                os.environ["CCA_MCP_URL"] = args.mcp_url
+            print(f"Using regulatory MCP server: {external_url}")
 
-    print(f"Running live LLM compliance check on module: {args.module} ...")
-    if os.environ.get("CCA_MCP_URL"):
-        print(f"Using CCA MCP server: {os.environ['CCA_MCP_URL']}")
-    print()
+        agent = _build_agent(args.module, use_mocks=args.no_mcp)
+        payload = _build_payload(args)
 
-    result = await agent.ainvoke(payload)
+        print(f"Running live LLM compliance check on module: {args.module} ...\n")
+        result = await agent.ainvoke(payload)
 
     report = result["findings_report"]
     deliverable = result["deliverable_result"]
@@ -129,8 +179,14 @@ async def _run(args: argparse.Namespace) -> None:
     print(f"\nDeliverable Result:\n{deliverable.model_dump_json(indent=2)}")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run a live LLM FCA/CCA compliance check.")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run a live LLM FCA/CCA compliance check. "
+            "Automatically starts the local regulatory MCP server in the background unless "
+            "--mcp-url, --no-mcp, or FCA_MCP_URL/CCA_MCP_URL is provided."
+        )
+    )
     parser.add_argument(
         "--module",
         choices=["codebase_review", "pr_review", "product_spec"],
@@ -160,10 +216,39 @@ def main() -> None:
     parser.add_argument(
         "--mcp-url",
         default=None,
-        help="Optional Streamable HTTP MCP URL (sets FCA_MCP_URL and CCA_MCP_URL).",
+        help="Optional external Streamable HTTP MCP URL (skips auto-bootstrapping a background MCP server).",
     )
-    args = parser.parse_args()
-    asyncio.run(_run(args))
+    parser.add_argument(
+        "--mcp-port",
+        type=int,
+        default=None,
+        help=(
+            f"Optional port for the auto-bootstrapped background MCP server "
+            f"(default: {DEFAULT_MCP_PORT}, falling back to a free port if busy)."
+        ),
+    )
+    parser.add_argument(
+        "--no-mcp",
+        action="store_true",
+        help="Skip MCP server bootstrapping and use in-memory mock regulatory adapters.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    def _handle_sigterm(_signum: int, _frame: Any) -> None:
+        raise SystemExit(143)
+
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _handle_sigterm)
+
+    try:
+        asyncio.run(_run(args))
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
 
 
 if __name__ == "__main__":

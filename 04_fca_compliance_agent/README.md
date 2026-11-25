@@ -38,31 +38,44 @@ uv sync --all-packages
 uv run --no-sync --package fca-compliance-agent python -m unittest discover -s 04_fca_compliance_agent/tests -v
 ```
 
-### Running the Compliance Agent (macOS & Windows)
+### Running the Compliance Agent (macOS, Linux & Windows)
 
-Make sure `.env` is configured at the repository root (`cp .env.example .env`), then run:
+Make sure `.env` is configured at the repository root (`cp .env.example .env`), then run a single command. The wrapper script automatically:
+
+1. Finds or installs `uv` if it is not yet on your `PATH`.
+2. Syncs `fca-compliance-agent` and its `mcp` extra into `.venv` (`uv sync --frozen --inexact --package fca-compliance-agent --extra mcp`) whenever needed.
+3. Starts the local `fca-regulatory-mcp` HTTP server in the background, waits until it is ready, wires `FCA_MCP_URL` / `CCA_MCP_URL`, and shuts it down cleanly when the run finishes.
 
 - **macOS / Linux:**
   ```bash
+  # Scan the default repo (natchainsix/quicklend-nc) with auto-bootstrapped MCP:
   ./04_fca_compliance_agent/scripts/run.sh
-  # or scan a specific GitHub repo with the live regulatory MCP server:
-  ./04_fca_compliance_agent/scripts/run.sh --repo-url https://github.com/natchainsix/quicklend-nc --mcp-url http://127.0.0.1:8001/mcp
-  # or choose another module:
+  # Or scan a specific GitHub repo:
+  ./04_fca_compliance_agent/scripts/run.sh --repo-url https://github.com/natchainsix/quicklend-nc
+  # Or choose another module:
   ./04_fca_compliance_agent/scripts/run.sh --module pr_review
   ./04_fca_compliance_agent/scripts/run.sh --module product_spec
+  # Optional overrides:
+  ./04_fca_compliance_agent/scripts/run.sh --mcp-url http://127.0.0.1:8001/mcp  # use an external MCP server
+  ./04_fca_compliance_agent/scripts/run.sh --mcp-port 8005                      # pin background MCP port
+  ./04_fca_compliance_agent/scripts/run.sh --no-mcp                             # use in-memory mock adapters
   ```
 - **Windows (PowerShell):**
   ```powershell
   .\04_fca_compliance_agent\scripts\run.ps1
+  .\04_fca_compliance_agent\scripts\run.ps1 --repo-url https://github.com/natchainsix/quicklend-nc
   .\04_fca_compliance_agent\scripts\run.ps1 --module pr_review
   ```
 - **Windows (Command Prompt):**
   ```cmd
   04_fca_compliance_agent\scripts\run.cmd
+  04_fca_compliance_agent\scripts\run.cmd --repo-url https://github.com/natchainsix/quicklend-nc
   04_fca_compliance_agent\scripts\run.cmd --module pr_review
   ```
 
-To enable real MCP server connectivity (for the FCA Handbook RAG and Consumer Credit Act MCP servers):
+Set `FORCE_UV_SYNC=1` if you want the wrapper script to re-run `uv sync` even when `.venv` already has `fca-compliance-agent` and `mcp` installed.
+
+To install the MCP extra manually (e.g. if running `fca-regulatory-mcp` directly):
 
 ```bash
 uv sync --all-packages --extra mcp
