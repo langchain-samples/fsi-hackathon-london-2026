@@ -16,8 +16,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import re
+import sys
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +31,8 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 from ..agent import build_default_core_subgraph
 from ..core import build_pipeline_for_module
@@ -388,6 +393,13 @@ def create_app(
             units=units,
         )
 
+        started = time.monotonic()
+        logger.info(
+            "POST /review started for %s (%d file(s), commit=%s)",
+            req.repository,
+            len(units),
+            req.commit[:12],
+        )
         core = get_core()
         result = await core.ainvoke({"analysis_input": analysis_input})
         report: FindingsReport = result["findings_report"]
@@ -403,6 +415,14 @@ def create_app(
             if converted is not None:
                 mapped.append(converted)
 
+        logger.info(
+            "POST /review completed for %s in %.1fs: report=%s verdict=%s findings=%d",
+            req.repository,
+            time.monotonic() - started,
+            report.report_id,
+            report.overall_verdict,
+            len(mapped),
+        )
         return {
             "findings": mapped[:200],
             "report_id": report.report_id,
@@ -622,6 +642,14 @@ def create_app(
         record = state_cache["runs"][run_id]
         record["status"] = "running"
         record["updated_at"] = datetime.now(timezone.utc).isoformat()
+        started = time.monotonic()
+        logger.info(
+            "Run %s started: mode=%s target=%s output_type=%s",
+            run_id,
+            mode,
+            record["target"],
+            payload.get("output_type") or (payload.get("raw_input") or {}).get("output_type"),
+        )
         try:
             pipeline = get_pipelines()[mode]
             result = await pipeline.ainvoke(payload)
@@ -638,9 +666,19 @@ def create_app(
             record["findings_report"] = report.model_dump(mode="json") if report is not None else None
             record["deliverable_result"] = deliverable.model_dump(mode="json") if deliverable is not None else None
             record["reply"] = reply_text
+            logger.info(
+                "Run %s completed in %.1fs: report=%s verdict=%s findings=%s deliverable=%s",
+                run_id,
+                time.monotonic() - started,
+                report.report_id if report is not None else None,
+                report.overall_verdict if report is not None else None,
+                len(report.findings) if report is not None else 0,
+                deliverable.summary if deliverable is not None else "none",
+            )
         except Exception as exc:
             record["status"] = "failed"
             record["error"] = f"{type(exc).__name__}: {exc}"
+            logger.exception("Run %s failed after %.1fs: %s", run_id, time.monotonic() - started, exc)
         finally:
             record["updated_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -706,6 +744,12 @@ def main(argv: list[str] | None = None) -> None:
         help=f"Default GitHub organisation for /api/targets (default: GITHUB_ORG or {DEFAULT_GITHUB_ORG}).",
     )
     args = parser.parse_args(argv)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
     app = create_app(default_org=args.github_org)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
