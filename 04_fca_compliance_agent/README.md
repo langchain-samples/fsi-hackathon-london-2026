@@ -48,14 +48,17 @@ Make sure `.env` is configured at the repository root (`cp .env.example .env`), 
 
 - **macOS / Linux:**
   ```bash
-  # Scan the default repo (natchainsix/quicklend-nc) with auto-bootstrapped MCP:
+  # Scan a GitHub repo and open a real remediation PR (auto-bootstrapped MCP):
   ./04_fca_compliance_agent/scripts/run.sh
-  # Or scan a specific GitHub repo:
-  ./04_fca_compliance_agent/scripts/run.sh --repo-url https://github.com/natchainsix/quicklend-nc
-  # Or choose another module:
-  ./04_fca_compliance_agent/scripts/run.sh --module pr_review
-  ./04_fca_compliance_agent/scripts/run.sh --module product_spec
+  ./04_fca_compliance_agent/scripts/run.sh --repo-url https://github.com/natchainsix/safelend-co --branch main
+  # Review a real PR and post a real PR comment:
+  ./04_fca_compliance_agent/scripts/run.sh --module pr_review --pr-url https://github.com/owner/repo/pull/1
   # Optional overrides:
+  ./04_fca_compliance_agent/scripts/run.sh --draft-pr                           # open remediation PR as draft
+  ./04_fca_compliance_agent/scripts/run.sh --require-approval                   # interactive HITL gate before GitHub write
+  ./04_fca_compliance_agent/scripts/run.sh --no-github                          # local reports only (no PR / no comment)
+  ./04_fca_compliance_agent/scripts/run.sh --module pr_review --synthetic-diff  # offline synthetic PR diff
+  ./04_fca_compliance_agent/scripts/run.sh --module product_spec                # product spec stub review
   ./04_fca_compliance_agent/scripts/run.sh --mcp-url http://127.0.0.1:8001/mcp  # use an external MCP server
   ./04_fca_compliance_agent/scripts/run.sh --mcp-port 8005                      # pin background MCP port
   ./04_fca_compliance_agent/scripts/run.sh --no-mcp                             # use in-memory mock adapters
@@ -63,14 +66,14 @@ Make sure `.env` is configured at the repository root (`cp .env.example .env`), 
 - **Windows (PowerShell):**
   ```powershell
   .\04_fca_compliance_agent\scripts\run.ps1
-  .\04_fca_compliance_agent\scripts\run.ps1 --repo-url https://github.com/natchainsix/quicklend-nc
-  .\04_fca_compliance_agent\scripts\run.ps1 --module pr_review
+  .\04_fca_compliance_agent\scripts\run.ps1 --repo-url https://github.com/natchainsix/safelend-co --branch main
+  .\04_fca_compliance_agent\scripts\run.ps1 --module pr_review --pr-url https://github.com/owner/repo/pull/1
   ```
 - **Windows (Command Prompt):**
   ```cmd
   04_fca_compliance_agent\scripts\run.cmd
-  04_fca_compliance_agent\scripts\run.cmd --repo-url https://github.com/natchainsix/quicklend-nc
-  04_fca_compliance_agent\scripts\run.cmd --module pr_review
+  04_fca_compliance_agent\scripts\run.cmd --repo-url https://github.com/natchainsix/safelend-co --branch main
+  04_fca_compliance_agent\scripts\run.cmd --module pr_review --pr-url https://github.com/owner/repo/pull/1
   ```
 
 Set `FORCE_UV_SYNC=1` if you want the wrapper script to re-run `uv sync` even when `.venv` already has `fca-compliance-agent` and `mcp` installed.
