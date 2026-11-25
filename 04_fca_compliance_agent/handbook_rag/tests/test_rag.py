@@ -81,6 +81,7 @@ def test_a_short_whole_provision_is_not_marked_as_cut(index):
     [
         (["xprn"], {"XPRN"}, []),
         (["XSYS 4"], {"XSYS"}, []),
+        (["xsys 4.1"], {"XSYS"}, []),
         (["XPRN", "CONC"], {"XPRN"}, ["CONC"]),
         (["CONC", "PRIN 2A", "Consumer Credit Act 1974"], set(), ["CONC", "PRIN 2A", "CONSUMER CREDIT ACT 1974"]),
     ],
@@ -90,6 +91,8 @@ def test_search_scope(index, scope, books, missing):
     assert {r.split(" ")[0] for r in cites(found)} == books and found["not_in_index"] == missing
     if scope == ["XSYS 4"]:
         assert all(r.startswith("XSYS 4.") for r in cites(found))
+    if scope == ["xsys 4.1"]:
+        assert all(r.startswith("XSYS 4.1.") for r in cites(found))
 
 
 # --- get_fca_section -----------------------------------------------------------------------------------------------

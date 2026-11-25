@@ -36,7 +36,8 @@ def _describe(row: dict, text: str) -> dict[str, Any]:
 
 
 def _scope(sourcebooks: list[str] | None) -> tuple[list[str], list[str]]:
-    """Split the requested scope into what the index has and what it lacks. "PRIN 2A" means just that chapter."""
+    """Split the requested scope into what the index has and what it lacks. "PRIN 2A" means just that chapter, and
+    "CONC 5.2A" just that section."""
     wanted = [" ".join(s.upper().split()) for s in sourcebooks or [] if s.strip()]
     if not wanted:
         return [], []
@@ -55,7 +56,8 @@ def search_fca_handbook(
     Args:
         query: One topic in regulatory words, for example "testing changes before release", or a reference.
         top_k: How many provisions to return, from 1 to 20.
-        sourcebooks: Only these sourcebooks or chapters, for example ["CONC", "PRIN 2A"]. Leave out to search all.
+        sourcebooks: Only these sourcebooks, chapters or sections, for example ["CONC", "PRIN 2A", "CONC 5.2A"]. Leave
+            out to search all.
         as_of: Use the rules in force on this date (YYYY-MM-DD). Leave out for today.
     """
     day = _date(as_of)

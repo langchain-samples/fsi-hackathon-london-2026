@@ -187,14 +187,19 @@ def _live() -> tuple[QdrantClient, str]:
     return c, name
 
 
-def _filter(as_of: date, scope: list[str] | None = None, must: list | None = None) -> m.Filter:
+_SCOPE_FIELDS = ("sourcebook", "chapter", "section")
+
+
+def _filter(
+    as_of: date, scope: list[str] | None = None, must: list | None = None, fields: tuple[str, ...] = _SCOPE_FIELDS
+) -> m.Filter:
     conditions: list = [
         m.FieldCondition(key="from_day", range=m.Range(lte=as_of.toordinal())),
         m.FieldCondition(key="to_day", range=m.Range(gte=as_of.toordinal())),
     ]
     if scope:
         conditions.append(m.Filter(should=[
-            m.FieldCondition(key=field, match=m.MatchAny(any=scope)) for field in ("sourcebook", "chapter")
+            m.FieldCondition(key=field, match=m.MatchAny(any=scope)) for field in fields
         ]))  # fmt: skip
     return m.Filter(must=conditions + (must or []))
 
@@ -227,7 +232,7 @@ def search(query: str, as_of: date, scope: list[str] | None = None, limit: int =
     best: dict[tuple, dict] = {}  # several parts of one long provision count once
     for ref in find_references(query):  # a provision named in the query always comes first
         row = get(str(ref), as_of)
-        if row and (not scope or row["sourcebook"] in scope or row["chapter"] in scope):
+        if row and (not scope or any(row[field] in scope for field in _SCOPE_FIELDS)):
             best[(row["citation"], row["effective_from"])] = row
     for point in points:
         best.setdefault((point.payload["citation"], point.payload["effective_from"]), point.payload)
@@ -278,16 +283,16 @@ def sections(chapter: str, as_of: date) -> list[str]:
     """The sections in a chapter or sourcebook that have provisions in force, in Handbook order."""
     with _lock:
         c, name = _live()
-        rows = _scroll_all(c, name, _filter(as_of, [chapter]))
+        rows = _scroll_all(c, name, _filter(as_of, [chapter], fields=("sourcebook", "chapter")))
     return list(dict.fromkeys(r["section"] for r in sorted(rows, key=lambda r: r["position"])))
 
 
 def scopes() -> set[str]:
-    """Every sourcebook and chapter in the index."""
+    """Every sourcebook, chapter and section in the index."""
     with _lock:
         c, name = _live()
         rows = _scroll_all(c, name, m.Filter())
-    return {r["sourcebook"] for r in rows} | {r["chapter"] for r in rows}
+    return {r[field] for r in rows for field in _SCOPE_FIELDS}
 
 
 def definitions(text: str, limit: int = 10) -> dict[str, str]:

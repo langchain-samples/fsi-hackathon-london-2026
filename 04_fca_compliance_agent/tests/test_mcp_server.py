@@ -142,6 +142,7 @@ class StdioEndToEndTests(unittest.TestCase):
             section = await cca.get_document(section="66A")
             self.assertEqual(section[0].reference, "CCA 1974 s.66A")
             self.assertTrue(section[0].url.endswith("/section/66A"))
+            self.assertEqual(await cca.get_document(section="999"), [])  # the server says it does not exist
 
         asyncio.run(run())
 
