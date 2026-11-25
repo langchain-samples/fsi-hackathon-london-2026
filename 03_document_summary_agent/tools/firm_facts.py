@@ -4,17 +4,25 @@
 
 - whether the firm is a "small firm" under the document's own size test (both PS26-4 and PS26-7 define one in 2.3),
   which decides whether the small-firm deadlines in the transitional arrangements apply;
-- gaps: profile fields that are empty, such as no named senior manager, which become actions in the brief.
+- its named senior managers, and gaps: roles or fields with nobody or nothing recorded, which become actions;
+- its important business services, the providers each depends on, and any provider that several important services
+  share (a concentration of risk).
 
 The model then only has to apply these facts, never to compare numbers or invent missing data.
 """
 import re
+
+from utils import db
 
 from .documents import get_document
 from .firms import get_firm_profile
 
 SIZE_TEST = re.compile(
     r"fewer than ([\d,]+) customers and total assets of less than £([\d.]+) (billion|million)", re.IGNORECASE)
+SENIOR_MANAGER_FIELDS = {
+    "operational_resilience_senior_manager": "operational resilience",
+    "financial_crime_senior_manager": "financial crime",
+}
 
 
 def _gbp_millions(amount: str) -> float | None:
@@ -54,22 +62,52 @@ def _size_test(document_id: str, firm: dict) -> dict:
     return {"paragraph": None, "is_small_firm": None, "explanation": "The document defines no small-firm test."}
 
 
-def get_firm_facts(document_id: str, firm_id: str) -> dict:
-    """The firm's profile plus facts worked out in code for this document, for example "PS26-4" and "FIRM-001".
-
-    Returns the profile (with third-party providers, their contract end dates and whether each is material), the
-    small-firm test under the document's own definition, and gaps: profile fields that are empty. Use these facts
-    as given; do not recompute them.
-    """
+def bank_context(firm_id: str) -> dict:
+    """Everything recorded about the firm, document-independent: profile, providers, senior managers, important
+    business services and the providers they share. Also used by the control tower's "Our bank" view."""
     firm = get_firm_profile(firm_id)
-    gaps = [f"No {field.replace('_', ' ')} is recorded for the firm."
-            for field, value in firm.items() if value is None]
+    row = db.get("firms", firm_id=firm_id) or {}
+    providers = {p["provider_id"]: p for p in firm["third_party_providers"]}
+
+    senior_managers = [{"role": role, "name": row.get(field)} for field, role in SENIOR_MANAGER_FIELDS.items()
+                       if field in row]
+    services = [{"name": s["name"], "important": s.get("important", False),
+                 "providers": [providers[p]["name"] for p in s.get("provider_ids", []) if p in providers]}
+                for s in row.get("business_services", [])]
+    important = [s for s in services if s["important"]]
+    shared = []
+    for provider in firm["third_party_providers"]:
+        users = [s["name"] for s in important if provider["name"] in s["providers"]]
+        if len(users) > 1:
+            shared.append({"provider": provider["name"], "important_services": users,
+                           "explanation": f"{provider['name']} supports {len(users)} important business services "
+                                          f"({', '.join(users)}): a concentration of risk."})
+
+    gaps = [f"No {m['role']} senior manager is named." for m in senior_managers if not m["name"]]
+    gaps += [f"No {field.replace('_', ' ')} is recorded for the firm." for field, value in firm.items()
+             if value is None and field not in SENIOR_MANAGER_FIELDS]
+    if not services:
+        gaps.append("No business services are recorded, so important business services are unknown.")
     return {
         "profile": firm,
-        "small_firm_test": _size_test(document_id, firm),
+        "senior_managers": senior_managers,
+        "business_services": services,
+        "shared_providers": shared,
         "gaps": gaps,
         "material_providers": [
             {"name": p["name"], "service": p["service"], "contract_end": p["contract_end"]}
             for p in firm["third_party_providers"] if p["material"]
         ],
     }
+
+
+def get_firm_facts(document_id: str, firm_id: str) -> dict:
+    """The firm's facts for this document, for example "PS26-4" and "FIRM-001", worked out in code.
+
+    Returns the profile (with third-party providers, their contract end dates and whether each is material), the
+    named senior managers, the important business services and the providers several of them share, the small-firm
+    test under the document's own definition, and gaps in the firm's data. Use these facts as given; do not
+    recompute them.
+    """
+    context = bank_context(firm_id)
+    return {**context, "small_firm_test": _size_test(document_id, context["profile"])}

@@ -16,6 +16,10 @@ Every check is plain code (no model judges), so a score always means the same th
 - firm_fields_filled:    with a firm given, every item says whether it applies to the firm
 - firm_findings:         share of the hand-picked firm-specific findings the brief gets right (right deadline,
                          provider named, gap turned into an action, small-firm extensions marked as not applying)
+- review_complete:       the reviewer summary has sections A to E, an immediate action, and only known teams
+- review_cited:          every recommended action and open question cites a real paragraph
+- review_findings:       share of the hand-picked findings that reach the reviewer summary
+- unclear_items_are_questions: every item marked "unclear" for the firm is raised as an open question
 
 The gold lists below were picked by hand from the documents in data/documents and the firm's data in
 data/firms.jsonl. Extend them as you find gaps.
@@ -47,6 +51,7 @@ EXAMPLES = [
                           ["30-day", "30 days"], ["10 business days"], ["30 June 2027"], ["2 business days"]],
             "never_cite": ["1", "3", "10"],
             # FIRM-001 has 1.2m customers and £9bn assets: not a small firm, so 9.2 and 9.3 don't apply.
+            "review_mentions": [["PEP"], ["0.85"], ["£250"], ["Valdoria"], ["Dana Whitfield"]],
             "firm_findings": [
                 {"name": "small-firm extensions don't apply", "paras": ["9.2", "9.3"], "every_item_applies": "no"},
                 {"name": "existing customers re-checked by 30 June 2027", "paras": ["9.1"], "deadline": "30 June 2027"},
@@ -64,6 +69,8 @@ EXAMPLES = [
             "never_cite": ["1", "3", "10"],
             # FIRM-001: no operational resilience senior manager; NimbusCloud contract ends 30 June 2027 and hosts
             # both mobile banking and card payments; PayCore contract ends 31 December 2029; not a small firm.
+            "review_mentions": [["senior manager"], ["NimbusCloud"], ["PayCore"], ["30 June 2027"],
+                                ["31 January 2027"]],
             "firm_findings": [
                 {"name": "missing senior manager is an action", "paras": ["8.1"], "deadline": "31 January 2027",
                  "mentions": [["appoint", "not named", "no senior manager", "No operational resilience", "not recorded",
@@ -72,8 +79,9 @@ EXAMPLES = [
                  "mentions": [["NimbusCloud"], ["30 June 2027"]]},
                 {"name": "PayCore contract updated by 31 December 2028", "paras": ["9.3", "6.3"],
                  "mentions": [["PayCore"], ["31 December 2028"]]},
-                # "yes" or "unclear" are both fair: the data doesn't say both services are *important* ones.
-                {"name": "NimbusCloud concentration risk", "paras": ["6.5"], "mentions": [["NimbusCloud"]]},
+                # data/firms.jsonl marks mobile banking and card payments as important, both on NimbusCloud.
+                {"name": "NimbusCloud concentration risk", "paras": ["6.5"], "applies": "yes",
+                 "mentions": [["NimbusCloud"]]},
                 {"name": "standard deadline, not the small-firm one", "paras": ["4.1"], "deadline": "31 March 2027"},
                 {"name": "small-firm extensions don't apply", "paras": ["9.1", "9.2"], "every_item_applies": "no"},
             ],
@@ -165,7 +173,10 @@ def firm_fields_filled(inputs: dict, outputs: dict) -> dict:
 def _finding_met(finding: dict, outputs: dict) -> bool:
     items = [item for item in _items(outputs) if set(PARA.findall(item["source"])) & set(finding["paras"])]
     if "every_item_applies" in finding:  # nothing wrongly applied (no items at all is fine)
-        return all(item.get("applies_to_firm") == finding["every_item_applies"] for item in items)
+        # Judge each item by the paragraph it is mainly about (its first citation): "PS26-7 para 9.1; para 9.2"
+        # is the standard 9.1 deadline, citing 9.2 only to say the small-firm extension does not apply.
+        main = [item for item in items if PARA.findall(item["source"])[0] in finding["paras"]]
+        return all(item.get("applies_to_firm") == finding["every_item_applies"] for item in main)
     for item in items:
         text = f"{item.get('firm_deadline') or ''} {item.get('firm_action') or ''}".lower()
         if "applies" in finding and item.get("applies_to_firm") != finding["applies"]:
@@ -186,8 +197,57 @@ def firm_findings(outputs: dict, reference_outputs: dict) -> dict:
             "comment": f"missed: {missed}" if missed else ""}
 
 
+TEAMS = {"Financial Crime (MLRO)", "KYC Operations", "Transaction Monitoring", "Operational Resilience", "Technology",
+         "Third-Party Risk", "Compliance", "Board"}
+
+
+def _review_entries(outputs: dict) -> list[dict]:
+    review = outputs["brief"]["review"]
+    return [*review["d_immediate"], *review["d_near_term"], *review["d_monitoring"], *review["e_open_questions"]]
+
+
+def review_complete(outputs: dict) -> dict:
+    """The reviewer summary has every section, at least one immediate action, and only known owning teams."""
+    review = outputs["brief"].get("review") or {}
+    missing = [k for k in ("a_summary", "b_applicability", "c_impact", "d_immediate", "e_takeaways") if not review.get(k)]
+    if missing:
+        return {"key": "review_complete", "score": 0, "comment": f"missing: {missing}"}
+    owners = {e["owner"] for e in _review_entries(outputs)} | set(review["owners"])
+    unknown = sorted(owners - TEAMS)
+    return {"key": "review_complete", "score": int(not unknown), "comment": f"unknown teams: {unknown}" if unknown else ""}
+
+
+def review_cited(inputs: dict, outputs: dict) -> dict:
+    """Every recommended action and open question cites a paragraph that exists in the document."""
+    real = _paragraphs_in(inputs["document_id"])
+    bad = [e["source"] for e in _review_entries(outputs) if not set(PARA.findall(e["source"])) or
+           set(PARA.findall(e["source"])) - real]
+    return {"key": "review_cited", "score": int(not bad), "comment": f"bad: {bad}" if bad else ""}
+
+
+def review_findings(outputs: dict, reference_outputs: dict) -> dict:
+    """Share of the hand-picked findings the reviewer summary carries (in sections C, D or E)."""
+    review = outputs["brief"]["review"]
+    text = " ".join([review["c_impact"], *review["e_takeaways"], *(json.dumps(e) for e in _review_entries(outputs))])
+    wanted = reference_outputs.get("review_mentions", [])
+    lost = [group[0] for group in wanted if not any(s.lower() in text.lower() for s in group)]
+    return {"key": "review_findings", "score": round(1 - len(lost) / len(wanted), 3) if wanted else 1,
+            "comment": f"lost: {lost}" if lost else ""}
+
+
+def unclear_items_are_questions(outputs: dict) -> dict:
+    """Every item marked 'unclear' for the firm is raised as an open question citing its paragraph."""
+    asked = " ".join(q["source"] for q in outputs["brief"]["review"]["e_open_questions"])
+    cited = set(PARA.findall(asked))
+    missed = [item["source"] for item in _items(outputs)
+              if item.get("applies_to_firm") == "unclear" and not set(PARA.findall(item["source"])) & cited]
+    return {"key": "unclear_items_are_questions", "score": int(not missed),
+            "comment": f"not raised: {missed}" if missed else ""}
+
+
 EVALUATORS = [ids_sequential, sources_well_formed, sources_exist, obligations_found, key_facts_kept,
-              no_non_obligations, firm_fields_filled, firm_findings]
+              no_non_obligations, firm_fields_filled, firm_findings, review_complete, review_cited, review_findings,
+              unclear_items_are_questions]
 
 # --- runners -------------------------------------------------------------------------------------------------
 

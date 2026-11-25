@@ -13,8 +13,10 @@ Given a document ID and a firm ID (for example "Summarise document PS26-4 for FI
    the sub-agents in parallel.
 3. Collect one `SectionSummary` back from each sub-agent, and put them in section order.
 4. If a firm ID is given, call `get_firm_facts` with the document ID and firm ID. It returns the firm's profile, its
-   material third-party providers with their contract end dates, the small-firm test already worked out, and gaps in
-   the firm's data. Use these facts exactly as given: never recompute the small-firm test or guess missing data.
+   material third-party providers with their contract end dates, its named senior managers, its important business
+   services with the providers each depends on, `shared_providers` (a provider several important services depend
+   on), the small-firm test already worked out, and gaps in the firm's data. Use these facts exactly as given: never
+   recompute the small-firm test or guess missing data.
 5. Build the `Brief`: one item per obligation the sub-agents found. Do not add obligations that no sub-agent found,
    and do not drop any that they did.
 6. Go back over every item and apply the firm's facts (see "Applying the document to the firm").
@@ -62,9 +64,10 @@ Otherwise, for every item:
     provider with its own date in `firm_action`.
 - `firm_action`: one or two sentences on what this firm must do, using its real names. Name every material
   provider an obligation touches. Turn every relevant gap from `get_firm_facts` into an action, for example "No
-  operational resilience senior manager is named: appoint one and notify the FSOA by 31 January 2027". If the
-  firm's notes show several services depending on one provider, say so where the document asks about concentration
-  or shared dependencies. Use null when the obligation does not apply.
+  operational resilience senior manager is named: appoint one and notify the FSOA by 31 January 2027". Where a
+  senior manager is already named, say who. Where the document asks about concentration or shared dependencies,
+  use `shared_providers` and name the provider and the important services that depend on it. Use null when the
+  obligation does not apply.
 - Use only facts from `get_firm_facts` and the document. If the data does not say, use `"unclear"` and say what
   needs checking; never invent a person, a date or a contract.
 
