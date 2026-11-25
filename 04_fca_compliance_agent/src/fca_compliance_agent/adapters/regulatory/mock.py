@@ -77,6 +77,59 @@ _FCA_CORPUS: list[RegulatoryPassage] = [
         ),
         url="https://www.handbook.fca.org.uk/handbook/PRIN/2A/2.html",
     ),
+    *(
+        # UK GDPR Article 5. (a), (c), (f) and 5(2) are the statutory wording; (b) and (e) were amended by the
+        # Data (Use and Access) Act 2025 and are summaries, labelled as such, until the verbatim text is added.
+        RegulatoryPassage(
+            source="uk_gdpr",
+            reference=f"UK GDPR Art 5({point})",
+            title=title,
+            text=text,
+            url="https://www.legislation.gov.uk/eur/2016/679/article/5",
+        )
+        for point, title, text in (
+            (
+                "1)(a",
+                "Lawfulness, fairness and transparency of personal data processing",
+                "Personal data shall be processed lawfully, fairly and in a transparent manner in relation to "
+                "the data subject ('lawfulness, fairness and transparency').",
+            ),
+            (
+                "1)(b",
+                "Purpose limitation: no further use for incompatible purposes such as marketing",
+                "SUMMARY, NOT VERBATIM: personal data must be collected for specified, explicit and legitimate "
+                "purposes and not further processed by or on behalf of a controller in a manner incompatible "
+                "with those purposes ('purpose limitation').",
+            ),
+            (
+                "1)(c",
+                "Data minimisation: store only the personal data that is necessary",
+                "Personal data shall be adequate, relevant and limited to what is necessary in relation to the "
+                "purposes for which they are processed ('data minimisation').",
+            ),
+            (
+                "1)(e",
+                "Storage limitation: personal data retention no longer than necessary",
+                "SUMMARY, NOT VERBATIM: personal data must be kept in a form which permits identification of "
+                "data subjects for no longer than is necessary for the purposes for which it is processed, "
+                "subject to limited exceptions for archiving, research and statistics ('storage limitation').",
+            ),
+            (
+                "1)(f",
+                "Integrity and confidentiality: security of personal data",
+                "Personal data shall be processed in a manner that ensures appropriate security of the personal "
+                "data, including protection against unauthorised or unlawful processing and against accidental "
+                "loss, destruction or damage, using appropriate technical or organisational measures "
+                "('integrity and confidentiality').",
+            ),
+            (
+                "2",
+                "Accountability of the controller for personal data processing",
+                "The controller shall be responsible for, and be able to demonstrate compliance with, "
+                "paragraph 1 ('accountability').",
+            ),
+        )
+    ),
 ]
 
 _CCA_CORPUS: list[RegulatoryPassage] = [
