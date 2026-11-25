@@ -1,0 +1,52 @@
+name: FCA Compliance Agent CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test & Verify Hexagonal Boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install fca-compliance-agent dependencies
+        run: uv sync --frozen --package fca-compliance-agent
+
+      - name: Run unit, integration, and hexagonal boundary tests
+        run: uv run --no-sync --package fca-compliance-agent python -m unittest discover -s 04_fca_compliance_agent/tests -v
+
+      - name: Verify compiled LangGraph agent entrypoints
+        run: |
+          uv run --no-sync --package fca-compliance-agent python -c "
+          from fca_compliance_agent.agent import (
+              pr_review_agent,
+              codebase_review_agent,
+              product_spec_agent,
+          )
+          for name, graph in [
+              ('pr_review_agent', pr_review_agent),
+              ('codebase_review_agent', codebase_review_agent),
+              ('product_spec_agent', product_spec_agent),
+          ]:
+              assert hasattr(graph, 'ainvoke'), f'{name} missing ainvoke'
+          print('All 3 compliance agent graphs compiled cleanly.')
+          "
