@@ -57,7 +57,11 @@ control_tower.ipynb     SUBMISSION: the story step by step. Commit it WITHOUT ou
 portal/app.py + static/index.html   demo UI, four tabs. Dashboard: counts, Scan (screens the next new applications,
                         monitors onboarded card clients), and one action queue for every human decision from every
                         pillar (approve/reject, POST /api/action/{id}), plus a chat box to the supervisor (live only).
-                        KYC: all applicants, PEP and sanctions lists, client file. Transaction monitoring: card clients,
+                        KYC (portal/kyc_tab.py + static/kyc.js/.css): the KYC process map with a count per stage,
+                        a filterable case list, and a case file that walks each step of the map (application,
+                        profile, screening, risk with paragraphs, approval, monitoring); watchlists folded away.
+                        Bulk: "Screen all new" and "Re-assess all due" run one background job; decisions still land
+                        in the action queue. Offline covers all 27 applicants (data/offline_applicants.jsonl). Transaction monitoring: card clients,
                         decisions next to analyst labels. Regulatory change: internal (firm, providers, brief) and
                         clients (control changes, who is affected).
 scenario.py             the story from the CLI.
@@ -73,7 +77,7 @@ Run from `00_control_tower/` unless noted. The venv is `.venv` at the repo root,
 
 ```bash
 uv run python -m control_tower.doctor                  # live setup check (needs .env)
-uv run pytest -q tests                                 # 19 offline tests; must stay green
+uv run pytest -q tests                                 # 27 offline tests; must stay green
 uv run python scenario.py --offline                    # whole story, scripted model
 uv run python scenario.py                              # whole story, real models, traced to LangSmith
 CONTROL_TOWER_OFFLINE=1 uv run uvicorn portal.app:app --port 8000   # rehearsal portal

@@ -31,6 +31,7 @@ from control_tower.loader import REPO_ROOT
 from control_tower.pillars import kyc, reg, tm
 from control_tower.policy import BASELINE, diff
 from control_tower.reviews import answer_review
+from portal.kyc_tab import make_router as kyc_tab_router
 
 OFFLINE = os.environ.get("CONTROL_TOWER_OFFLINE") == "1"
 if OFFLINE:
@@ -80,8 +81,8 @@ REFERENCE = {
                   _rows(REPO_ROOT / "03_document_summary_agent/data/third_party_providers.jsonl")},
 }
 _monitored: dict[str, tuple] = {}   # customer_id -> (rating, policy) their payments were last scored under
-# Offline, the scripted model only knows the clients with fixtures, so only they can be run.
-RUNNABLE = {l["customer_id"] for l in memory._links()} if OFFLINE else set(APPLICANTS)
+# Offline, the scripted model only knows the clients with fixtures (data/offline_applicants.jsonl: all of them).
+RUNNABLE = offline.covered_customers() & set(APPLICANTS) if OFFLINE else set(APPLICANTS)
 STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="Compliance Control Tower")
@@ -96,6 +97,11 @@ def _store():
 
 def _policy():
     return reg.active_policy(_store(), FIRM)
+
+
+app.include_router(kyc_tab_router(APPLICANTS, RUNNABLE, lambda: _policy().source_document,   # the KYC tab
+                                  run_job=lambda name, fn: _run(name, fn),
+                                  screen=lambda cid: kyc.run_kyc(cid, _store(), _policy())))
 
 
 def _run(name: str, fn) -> None:

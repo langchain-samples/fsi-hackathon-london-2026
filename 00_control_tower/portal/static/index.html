@@ -182,6 +182,7 @@
   .decide .row { display: flex; gap: 8px; } .decide input { flex: 1; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
   .decide .btn { flex: none; padding: 7px 16px; }
 </style>
+<link rel="stylesheet" href="/kyc/kyc.css">
 </head>
 <body>
 <header>
@@ -227,17 +228,19 @@
 
   <section class="view g-kyc" id="v-kyc">
     <div class="col">
+      <div class="panel"><h2>KYC process</h2><div id="kyc-flow" class="empty">Loading…</div></div>
       <div class="panel">
-        <h2>Customers</h2>
-        <input id="find" class="search" placeholder="Search by name or ID" oninput="shown['#register'] = null; renderRegister()">
-        <div id="register"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <h2 style="margin:0">Cases</h2><span class="spacer"></span><span id="kyc-bulk" class="acts"></span></div>
+        <div id="kyc-filters" class="kyc-filters"></div>
+        <input id="kyc-find" class="search" placeholder="Search by name or ID" oninput="shown['#kyc-cases'] = null; kycCases()">
+        <div id="kyc-cases" class="kyc-cases"></div>
       </div>
-      <div class="view on g-split">
-        <div class="panel"><h2>PEP list</h2><div id="pep"></div></div>
-        <div class="panel"><h2>Sanctions list</h2><div id="sanctions"></div></div>
-      </div>
+      <details class="panel"><summary>Watchlists used for screening</summary>
+        <div class="g-split" style="display:grid;gap:16px"><div><h2>PEP list</h2><div id="pep"></div></div>
+          <div><h2>Sanctions list</h2><div id="sanctions"></div></div></div></details>
     </div>
-    <div class="col" id="customer"></div>
+    <div class="col" id="kyc-case"></div>
   </section>
 
   <section class="view" id="v-tm">
@@ -284,6 +287,7 @@
     </div>
   </section>
 </main>
+<script src="/kyc/kyc.js"></script>
 <script>
 let lastSeq = 0, state = null, ref = null, shown = {};
 let tab = localStorage.getItem("tab") || "dash", selected = localStorage.getItem("client") || "";
@@ -448,29 +452,7 @@ function renderAction(a) {
       ${a.reject ? `<button class="btn no" onclick="decide('${esc(a.id)}','${esc(a.reject)}')">${a.reject === "block" ? "Block" : "Reject"}</button>` : ""}</div></div>`;
 }
 
-function renderRegister() {
-  const q = $("#find").value.trim().toLowerCase();
-  const rows = state.clients.filter(c => !q || (c.name + " " + c.customer_id).toLowerCase().includes(q));
-  paint("#register", JSON.stringify([rows, selected]), `<table><thead><tr><th>Customer</th><th>Rating</th><th>Decision</th><th>Stage</th></tr></thead><tbody>${rows.map(c =>
-    `<tr class="pick ${c.customer_id === selected ? "sel" : ""}" onclick="pick('${esc(c.customer_id)}')"><td>${esc(c.name || c.customer_id)} <span class="by">${esc(c.customer_id)}${c.has_card ? " · card" : ""}</span></td>
-     <td>${c.rating ? `<span class="rating r-${esc(c.rating)}">${esc(c.rating.toUpperCase())}</span>` : ""}</td>
-     <td class="st-${esc(c.status)}">${esc(words(c.status))}</td><td>${c.stage !== "not_screened" ? `<span class="stage s-${esc(c.stage)}">${esc(words(c.stage))}</span>` : ""}</td></tr>`).join("")}</tbody></table>`);
-}
 
-function renderCustomer(c) {
-  if (!c) return '<div class="panel empty">Pick a customer to see their file.</div>';
-  const risk = c.risk, busy = !!state.status.running, off = !c.runnable;
-  return `<div class="panel cust">
-    <div class="cust-head"><span class="name">${esc(c.name || c.customer_id)}</span><span class="meta">${esc(c.customer_id)}${c.user_id ? " · card " + esc(c.user_id) : " · no card account"}</span><span class="spacer"></span>
-      ${risk?.previous && risk.previous.rating !== risk.rating ? `<span class="meta">was <b>${esc(risk.previous.rating.toUpperCase())}</b> under ${esc(risk.previous.policy)} →</span>` : ""}
-      <span class="rating r-${risk ? esc(risk.rating) : "none"}">${risk ? esc(risk.rating.toUpperCase()) : "NOT SCREENED"}</span></div>
-    ${risk ? `<div class="meta">Rated under <b>${esc(risk.policy)}</b> · <span class="st-${esc(risk.status)}">${esc(words(risk.status))}</span>${c.onboarded ? " · onboarded" : ""}</div>
-      <ul class="reasons">${risk.reasons.map(r => `<li>${esc(r.text)}${para(r.paragraph)}</li>`).join("")}</ul>` : '<div class="meta">New application, not screened yet.</div>'}
-    <div class="acts"><button class="act" ${busy || off ? "disabled" : ""} title="${off ? "Offline rehearsal covers the scripted clients only" : ""}" onclick="post('/api/client/${esc(c.customer_id)}/onboard')">${risk ? "Screen again under the live policy" : "Screen this application"}</button></div>
-    ${c.client ? `<div class="hist-title">Client file · assessed under ${esc(c.client.assessed_policy || "nothing yet")} · stage ${esc(words(c.client.stage))}</div>
-      <ul class="hist" style="max-height:300px">${c.client.history.map(e => `<li class="${e.pillar === "lifecycle" ? "life" : ""}">${esc(e.what)}${para(e.paragraph)}</li>`).join("")}</ul>` : ""}
-  </div>`;
-}
 
 // --- Transaction monitoring tab: rules triage in code, investigator and auditor models, a person for every alert ---
 let tmOpen = new Set((() => { try { return JSON.parse(localStorage.getItem("tmOpen") || "[]"); } catch { return []; } })());
@@ -627,9 +609,8 @@ async function poll() {
     + `<div class="kpi" onclick="show('reg')"><b style="font-size:18px;line-height:1.6">${esc(state.policy.source_document)}</b><span>Live policy</span></div>`);
   paint("#actions", JSON.stringify(state.actions), state.actions.length ? state.actions.map(renderAction).join("") : '<div class="empty">Nothing waiting. Press Scan to look for new work.</div>');
 
-  renderRegister();
+  kycRender();
   if (tab === "bank") loadBank().catch(e => { $("#err").textContent = "Could not load the bank view: " + e; });
-  paint("#customer", JSON.stringify([state.customer, busy]), renderCustomer(state.customer));
   paint("#tm-flow", "flow", renderFlow());
   paint("#tm-rules", JSON.stringify([ruleSetShown, state.policy]), renderRuleSets());
   paint("#tm-metrics", JSON.stringify(state.card_clients.map(c => c.metrics)), renderTmMetrics());

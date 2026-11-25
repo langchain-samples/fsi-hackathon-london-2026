@@ -1,0 +1,51 @@
+/* KYC tab. Builds on the portal's variables and classes (panel, rating, para, act, btn, stage). */
+.kyc-lane { display: flex; align-items: stretch; gap: 0; overflow-x: auto; padding-bottom: 4px; }
+.kyc-lane + .kyc-lane-title { margin-top: 12px; }
+.kyc-lane-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--quiet); margin-bottom: 6px; }
+.kyc-node { flex: 1 1 0; min-width: 104px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+            padding: 8px 10px; text-align: left; color: var(--ink); font: inherit; }
+.kyc-node.count { cursor: pointer; } .kyc-node.count:hover { border-color: var(--kyc); }
+.kyc-node.on { border-color: var(--kyc); box-shadow: 0 0 0 1px var(--kyc) inset; }
+.kyc-node .m { font-size: 10.5px; font-weight: 700; color: var(--kyc); letter-spacing: .5px; }
+.kyc-node .l { display: block; font-size: 12.5px; font-weight: 600; margin-top: 2px; }
+.kyc-node .c { display: block; font-size: 20px; font-weight: 700; line-height: 1.2; margin-top: 2px; }
+.kyc-node .c.zero { color: var(--quiet); } .kyc-node.hot .c { color: var(--warn); }
+.kyc-node.pass .c { font-size: 12px; font-weight: 500; color: var(--quiet); }
+.kyc-arrow { flex: none; align-self: center; color: var(--quiet); padding: 0 4px; }
+.kyc-ends { display: flex; flex-direction: column; gap: 6px; flex: 1 1 0; min-width: 104px; }
+.kyc-ends .kyc-node { padding: 5px 10px; } .kyc-ends .kyc-node .c { font-size: 16px; }
+.kyc-loop { font-size: 12px; color: var(--quiet); margin-top: 6px; }
+.kyc-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.kyc-chip { background: none; border: 1px solid var(--line); color: var(--quiet); border-radius: 999px; padding: 3px 10px;
+            font: inherit; font-size: 12px; cursor: pointer; }
+.kyc-chip.on { color: var(--kyc); border-color: var(--kyc); }
+.kyc-cases { max-height: 460px; overflow: auto; }
+.kyc-st { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line);
+          color: var(--quiet); white-space: nowrap; }
+.kyc-st.approval, .kyc-st.reassessment_due, .kyc-st.refresh_due { color: var(--warn); border-color: var(--warn); }
+.kyc-st.onboarded { color: var(--good); border-color: var(--good); } .kyc-st.rejected { color: var(--bad); border-color: var(--bad); }
+.kyc-steps { list-style: none; margin: 0; padding: 0; }
+.kyc-step { position: relative; display: grid; grid-template-columns: 44px 1fr; gap: 10px; padding-bottom: 14px; }
+.kyc-step::before { content: ""; position: absolute; left: 21px; top: 30px; bottom: 0; width: 2px; background: var(--line); }
+.kyc-step:last-child::before { display: none; }
+.kyc-dot { width: 44px; height: 28px; border-radius: 999px; display: grid; place-items: center; font-size: 10.5px; font-weight: 700;
+           background: var(--line); color: var(--quiet); letter-spacing: .3px; }
+.kyc-step.done .kyc-dot, .kyc-step.active .kyc-dot { background: #34d39933; color: var(--good); }
+.kyc-step.active .s { color: var(--good); }
+.kyc-step.waiting .kyc-dot, .kyc-step.current .kyc-dot { background: #fbbf2433; color: var(--warn); box-shadow: 0 0 0 1px var(--warn) inset; }
+.kyc-step .t { font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-height: 28px; }
+.kyc-step .s { font-size: 11px; font-weight: 600; color: var(--quiet); }
+.kyc-step.done .s { color: var(--good); } .kyc-step.waiting .s, .kyc-step.current .s { color: var(--warn); }
+.kyc-body { font-size: 13px; margin-top: 4px; }
+.kyc-body table { font-size: 12.5px; } .kyc-body td:first-child { color: var(--quiet); width: 34%; }
+.kyc-quote { background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--kyc); border-radius: 6px;
+             padding: 8px 10px; font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.kyc-decide { background: var(--panel2); border: 1px solid var(--warn); border-radius: 8px; padding: 10px; margin-top: 6px; }
+.kyc-decide .row { display: flex; gap: 8px; margin-top: 8px; }
+.kyc-decide input { flex: 1; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.kyc-decide .btn { flex: none; padding: 7px 16px; }
+.kyc-note { font-size: 12px; color: var(--quiet); border-top: 1px solid var(--line); padding-top: 8px; }
+.kyc-hit { color: var(--bad); font-weight: 600; }
+details.kyc-more > summary { cursor: pointer; color: var(--quiet); font-size: 12px; margin: 4px 0; }
+details.panel > summary { cursor: pointer; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--quiet); }
+details.panel[open] > summary { margin-bottom: 10px; }

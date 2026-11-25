@@ -46,13 +46,29 @@ FACTS = {
 }
 
 
+# Every other applicant, so the rehearsal can screen all 27 (hand-checked against 01_kyc_agent/data/applications.jsonl).
+# The five fixtures above keep precedence; this file repeats them so it lists every applicant once.
+APPLICANTS_FILE = REPO_ROOT / "00_control_tower" / "data" / "offline_applicants.jsonl"
+_APPLICANTS = [json.loads(line) for line in APPLICANTS_FILE.read_text(encoding="utf-8").splitlines() if line.strip()]
+for _row in _APPLICANTS:
+    PROFILES.setdefault(_row["profile"]["full_name"], _row["profile"])
+    FACTS.setdefault(_row["profile"]["full_name"], _row["facts"])
+
+
+def covered_customers() -> set[str]:
+    """Customer IDs the scripted model can answer for."""
+    return {row["customer_id"] for row in _APPLICANTS}
+
+
 def _labels() -> dict:
     path = REPO_ROOT / "02_transaction_monitoring_agent" / "data" / "analyst_labels.jsonl"
     return {row["transaction_id"]: row for row in map(json.loads, path.read_text().splitlines()) if row}
 
 
 def _who(text: str) -> str:
-    return next((name for name in PROFILES if name in text), "Priya Shah")
+    """The applicant a prompt is about: the known name that appears first (an application can name a partner)."""
+    found = [(text.find(name), name) for name in PROFILES if name in text]
+    return min(found)[1] if found else "Priya Shah"
 
 
 def _investigations() -> dict:
