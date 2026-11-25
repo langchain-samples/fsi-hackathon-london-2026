@@ -99,28 +99,50 @@ Every run returns the same fixed shape (`brief.py`), following the team's Inputs
 
 ```json
 {
-  "document_id": "PS26-7",
+  "document_id": "PS26-4",
   "firm_id": "FIRM-001",
-  "title": "Policy Statement PS26/7: ...",
-  "summary": "What the document is about, when it takes effect, and what it means for this firm.",
+  "title": "Policy Statement PS26/4: ...",
+  "summary": "What the document is about, when it takes effect, and what it means for this firm (small firm or not).",
   "items": [
-    {"id": 1, "summary": "Apply EDD to PEPs, their family members and close associates.", "source": "PS26-7 para 4.1"},
-    {"id": 2, "summary": "...", "source": "PS26-7 para 4.2"}
+    {
+      "id": 40,
+      "summary": "Name a senior manager responsible for operational resilience by 31 January 2027.",
+      "source": "PS26-4 para 8.1",
+      "applies_to_firm": "yes",
+      "firm_deadline": "31 January 2027",
+      "firm_action": "No operational resilience senior manager is recorded: appoint and name one by 31 January 2027."
+    }
   ]
 }
 ```
 
-One item per obligation, numbered from 1, each citing its paragraph. The control tower reads it as JSON through
-`contracts.brief_from_result`, so nothing on its side needs to change.
+One item per obligation, numbered from 1, each citing its paragraph. `id`, `summary` and `source` are the team
+template's fields; `applies_to_firm` (yes / no / unclear), `firm_deadline` and `firm_action` say what the obligation
+means for this firm. The control tower reads the Brief as JSON through `contracts.brief_from_result`, so nothing on
+its side needs to change.
+
+### Two documents, two kinds of brief
+
+| | PS26-7 (synthetic, ours) | PS26-4 (from LangChain) |
+|---|---|---|
+| About | Financial crime: due diligence and transaction monitoring | Operational resilience and third-party technology |
+| What matters | The rules, which the control tower turns into policy for KYC (01) and TM (02) | The firm: its providers, contract dates and data gaps |
+
+The firm's facts come from `get_firm_facts` (`tools/firm_facts.py`). It returns the firm's profile plus what can be
+worked out exactly in code: the small-firm test under the document's own paragraph 2.3, and gaps such as no named
+senior manager. The model applies these facts; it never compares numbers or fills in missing data itself.
 
 ### Checking the output
 
-`brief_evals.py` scores the Brief with plain-code checks (ids in order, sources well formed and real, must-have
-paragraphs found, key numbers and deadlines kept word for word, nothing cited from non-obligation sections):
+`brief_evals.py` scores the Brief with plain-code checks: ids in order, sources well formed and real, must-have
+paragraphs found, key numbers and deadlines kept word for word, nothing cited from non-obligation sections, every item
+marked for the firm, and hand-picked firm findings right (for PS26-4: the missing senior manager, the NimbusCloud and
+PayCore contract deadlines, the NimbusCloud concentration risk, no small-firm extensions).
 
 ```bash
-uv run python brief_evals.py --local    # print the scores here
-uv run python brief_evals.py            # run as a LangSmith dataset + experiment
+uv run python brief_evals.py --local               # print the scores here
+uv run python brief_evals.py --local --save out    # also save each Brief as JSON in out/
+uv run python brief_evals.py                       # run as a LangSmith dataset + experiment
 ```
 
 Because `agent.py` imports `model` from `utils.models`, the model your `.env` selects is the one the agent uses
@@ -141,6 +163,7 @@ everywhere: in the notebook, in Studio, and when deployed.
 ├── sub_agent_instructions.md       (the sub-agent's system prompt)
 ├── tools/
 │   ├── documents.py                (get_document)
+│   ├── firm_facts.py               (get_firm_facts: profile + small-firm test + gaps, used by the agent)
 │   ├── firms.py                    (get_firm_profile)
 │   └── third_party_providers.py    (get_third_party_provider)
 ├── data/                           (the firm's database: one JSONL file per table, plus the documents)

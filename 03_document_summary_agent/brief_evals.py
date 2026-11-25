@@ -13,13 +13,18 @@ Every check is plain code (no model judges), so a score always means the same th
 - obligations_found:     share of the hand-picked must-have paragraphs that have an item
 - key_facts_kept:        share of the hand-picked numbers, lists and deadlines that survive word for word
 - no_non_obligations:    nothing cited from sections that set no obligations (introduction, definitions, contacts)
+- firm_fields_filled:    with a firm given, every item says whether it applies to the firm
+- firm_findings:         share of the hand-picked firm-specific findings the brief gets right (right deadline,
+                         provider named, gap turned into an action, small-firm extensions marked as not applying)
 
-The gold lists below were picked by hand from the documents in data/documents. Extend them as you find gaps.
+The gold lists below were picked by hand from the documents in data/documents and the firm's data in
+data/firms.jsonl. Extend them as you find gaps.
 """
 from __future__ import annotations
 
 import argparse
 import inspect
+import json
 import os
 import re
 
@@ -41,6 +46,12 @@ EXAMPLES = [
                           ["20 or more", "20 or above", "of 20"], ["£250"], ["2 or more", "two or more"],
                           ["30-day", "30 days"], ["10 business days"], ["30 June 2027"], ["2 business days"]],
             "never_cite": ["1", "3", "10"],
+            # FIRM-001 has 1.2m customers and £9bn assets: not a small firm, so 9.2 and 9.3 don't apply.
+            "firm_findings": [
+                {"name": "small-firm extensions don't apply", "paras": ["9.2", "9.3"], "every_item_applies": "no"},
+                {"name": "existing customers re-checked by 30 June 2027", "paras": ["9.1"], "deadline": "30 June 2027"},
+                {"name": "first controls test by 30 September 2027", "paras": ["8.2"], "deadline": "30 September 2027"},
+            ],
         },
     ),
     (
@@ -51,6 +62,21 @@ EXAMPLES = [
             "key_facts": [["31 March 2027"], ["4 hours"], ["72 hours"], ["60 days"], ["30 business days"],
                           ["31 January 2027"]],
             "never_cite": ["1", "3", "10"],
+            # FIRM-001: no operational resilience senior manager; NimbusCloud contract ends 30 June 2027 and hosts
+            # both mobile banking and card payments; PayCore contract ends 31 December 2029; not a small firm.
+            "firm_findings": [
+                {"name": "missing senior manager is an action", "paras": ["8.1"], "deadline": "31 January 2027",
+                 "mentions": [["appoint", "not named", "no senior manager", "No operational resilience", "not recorded",
+                               "none is named", "no named"]]},
+                {"name": "NimbusCloud contract updated by 30 June 2027", "paras": ["9.3", "6.3"],
+                 "mentions": [["NimbusCloud"], ["30 June 2027"]]},
+                {"name": "PayCore contract updated by 31 December 2028", "paras": ["9.3", "6.3"],
+                 "mentions": [["PayCore"], ["31 December 2028"]]},
+                # "yes" or "unclear" are both fair: the data doesn't say both services are *important* ones.
+                {"name": "NimbusCloud concentration risk", "paras": ["6.5"], "mentions": [["NimbusCloud"]]},
+                {"name": "standard deadline, not the small-firm one", "paras": ["4.1"], "deadline": "31 March 2027"},
+                {"name": "small-firm extensions don't apply", "paras": ["9.1", "9.2"], "every_item_applies": "no"},
+            ],
         },
     ),
 ]
@@ -129,15 +155,50 @@ def no_non_obligations(outputs: dict, reference_outputs: dict) -> dict:
     return {"key": "no_non_obligations", "score": int(not wrong), "comment": f"cited: {wrong}" if wrong else ""}
 
 
+def firm_fields_filled(inputs: dict, outputs: dict) -> dict:
+    if not inputs.get("firm_id"):
+        return {"key": "firm_fields_filled", "score": 1}
+    blank = [item["id"] for item in _items(outputs) if item.get("applies_to_firm") is None]
+    return {"key": "firm_fields_filled", "score": int(not blank), "comment": f"blank ids: {blank}" if blank else ""}
+
+
+def _finding_met(finding: dict, outputs: dict) -> bool:
+    items = [item for item in _items(outputs) if set(PARA.findall(item["source"])) & set(finding["paras"])]
+    if "every_item_applies" in finding:  # nothing wrongly applied (no items at all is fine)
+        return all(item.get("applies_to_firm") == finding["every_item_applies"] for item in items)
+    for item in items:
+        text = f"{item.get('firm_deadline') or ''} {item.get('firm_action') or ''}".lower()
+        if "applies" in finding and item.get("applies_to_firm") != finding["applies"]:
+            continue
+        if "deadline" in finding and finding["deadline"].lower() not in text:
+            continue
+        if all(any(s.lower() in text for s in group) for group in finding.get("mentions", [])):
+            return True
+    return False
+
+
+def firm_findings(outputs: dict, reference_outputs: dict) -> dict:
+    findings = reference_outputs.get("firm_findings", [])
+    if not findings:
+        return {"key": "firm_findings", "score": 1}
+    missed = [f["name"] for f in findings if not _finding_met(f, outputs)]
+    return {"key": "firm_findings", "score": round(1 - len(missed) / len(findings), 3),
+            "comment": f"missed: {missed}" if missed else ""}
+
+
 EVALUATORS = [ids_sequential, sources_well_formed, sources_exist, obligations_found, key_facts_kept,
-              no_non_obligations]
+              no_non_obligations, firm_fields_filled, firm_findings]
 
 # --- runners -------------------------------------------------------------------------------------------------
 
 
-def run_local() -> None:
+def run_local(save_dir: str | None = None) -> None:
     for inputs, reference in EXAMPLES:
         outputs = brief_target(inputs)
+        if save_dir:
+            path = os.path.join(save_dir, f"brief_{inputs['document_id']}_{inputs['firm_id']}.json")
+            with open(path, "w", encoding="utf-8") as file:
+                json.dump(outputs["brief"], file, indent=2, ensure_ascii=False)
         args = {"inputs": inputs, "outputs": outputs, "reference_outputs": reference}
         print(f"\n== {inputs['document_id']} for {inputs['firm_id']}: {len(_items(outputs))} items")
         for ev in EVALUATORS:
@@ -160,5 +221,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--local", action="store_true", help="print scores here instead of a LangSmith experiment")
     parser.add_argument("--prefix", default="doc-summary-brief")
+    parser.add_argument("--save", metavar="DIR", help="with --local, also save each Brief as JSON in DIR")
     args = parser.parse_args()
-    run_local() if args.local else run_langsmith(args.prefix)
+    run_local(args.save) if args.local else run_langsmith(args.prefix)

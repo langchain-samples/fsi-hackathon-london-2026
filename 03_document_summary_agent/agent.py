@@ -3,7 +3,9 @@
 Given a document ID (and optionally a firm ID), it:
 1. Loads the document with `get_document`, which returns it already split into sections.
 2. Hands each section to a sub-agent, which summarises it and extracts its obligations as a `SectionSummary`.
-3. Combines the section summaries into a `Brief` for the firm, using `get_firm_profile` for the firm's context.
+3. Gets the firm's facts with `get_firm_facts`: its profile, plus the small-firm test and data gaps worked out in
+   code, so the model never has to compare numbers itself.
+4. Combines the section summaries and the firm's facts into a `Brief` for the firm.
 
 The `Brief` (see `brief.py`) is the fixed output: an overall summary, then one item per obligation with an `id`, a
 `summary` and a `source`. It comes back as `result["structured_response"]`.
@@ -16,7 +18,7 @@ from deepagents import create_deep_agent
 from langchain.chat_models import init_chat_model
 from sub_agent import section_summariser_subagent
 from tools.documents import get_document
-from tools.firms import get_firm_profile
+from tools.firm_facts import get_firm_facts
 from utils.models import PROJECT_ROOT, model
 
 INSTRUCTIONS = (PROJECT_ROOT / "instructions.md").read_text()
@@ -26,7 +28,7 @@ def build_agent(**kwargs):
     """
     return create_deep_agent(
         model=init_chat_model(model),
-        tools=[get_document, get_firm_profile],
+        tools=[get_document, get_firm_facts],
         system_prompt=INSTRUCTIONS,
         subagents=[section_summariser_subagent],
         response_format=Brief,
