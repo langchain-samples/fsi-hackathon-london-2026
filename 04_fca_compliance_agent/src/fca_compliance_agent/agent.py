@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import os
 
+from .adapters.github_codebase import build_github_codebase_review_module
 from .adapters.github_pr import build_github_pr_review_module
 from .adapters.llm import LangChainComplianceAnalyzer
+from .adapters.llm.langchain_llm import load_repo_env
 from .adapters.outbound import (
-    build_codebase_review_module,
     build_product_spec_module,
 )
 from .adapters.regulatory import (
@@ -35,6 +36,8 @@ def build_default_core_subgraph(
     analyzer_port: ComplianceAnalyzerPort | None = None,
 ):
     """Wire the Core Analysis Subgraph from explicit ports or environment config."""
+    load_repo_env()
+
     if fca_port is None:
         fca_url = os.environ.get("FCA_MCP_URL")
         fca_port = (
@@ -72,7 +75,7 @@ pr_review_agent = build_pipeline_for_module(
     core_subgraph=_default_core,
 )
 codebase_review_agent = build_pipeline_for_module(
-    build_codebase_review_module(),
+    build_github_codebase_review_module(),
     core_subgraph=_default_core,
 )
 product_spec_agent = build_pipeline_for_module(

@@ -29,15 +29,16 @@ jobs:
           cache-dependency-glob: "**/pyproject.toml"
 
       - name: Install fca-compliance-agent dependencies
-        run: uv sync --frozen --package fca-compliance-agent
+        run: uv sync --frozen --package fca-compliance-agent --extra mcp
 
       - name: Run unit, integration, and hexagonal boundary tests
         run: uv run --no-sync --package fca-compliance-agent python -m unittest discover -s 04_fca_compliance_agent/tests -v
 
-      - name: Verify run scripts and compiled LangGraph agent entrypoints
+      - name: Verify run scripts, MCP CLI, and compiled LangGraph agent entrypoints
         run: |
           bash -n 04_fca_compliance_agent/scripts/run.sh
           ./04_fca_compliance_agent/scripts/run.sh --help
+          uv run --no-sync --package fca-compliance-agent fca-regulatory-mcp --help
           test -f 04_fca_compliance_agent/scripts/run.ps1
           test -f 04_fca_compliance_agent/scripts/run.cmd
           uv run --no-sync --package fca-compliance-agent python -c "

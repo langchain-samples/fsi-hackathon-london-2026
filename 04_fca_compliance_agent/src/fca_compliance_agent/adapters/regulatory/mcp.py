@@ -62,6 +62,10 @@ def parse_mcp_passages(
     """
     payload = raw_result
 
+    # Ignore MCP tool-level errors (e.g. an unknown CCA section requested by triage)
+    if getattr(payload, "isError", False):
+        return []
+
     # Unwrap official MCP SDK CallToolResult-like objects if present
     if hasattr(payload, "structuredContent") and payload.structuredContent is not None:
         payload = payload.structuredContent
