@@ -8,6 +8,9 @@ Always wires real implementations:
     (`CCA_MCP_URL` over Streamable HTTP, or local `fca-regulatory-mcp` over stdio backed by `cca.md`)
   - GitHub I/O: real `GitHubCLIAdapter` (`git` + `gh` CLI) for both `pr_review_agent` and
     `codebase_review_agent`
+  - `product_spec_agent` reads a real PDF, Markdown or text specification
+
+`compliance_agent` is the one graph that Studio shows: chat in front of all three.
 """
 
 from __future__ import annotations
@@ -15,10 +18,12 @@ from __future__ import annotations
 import os
 import sys
 
+from .adapters.chat import build_combined_graph
 from .adapters.github_codebase import build_github_codebase_review_module
 from .adapters.github_pr import build_github_pr_review_module
 from .adapters.llm import LangChainComplianceAnalyzer
 from .adapters.llm.langchain_llm import load_repo_env
+from .adapters.product_spec import build_product_spec_review_module
 from .adapters.regulatory import (
     MCPConsumerCreditActAdapter,
     MCPFCAHandbookAdapter,
@@ -82,4 +87,13 @@ pr_review_agent = build_pipeline_for_module(
 codebase_review_agent = build_pipeline_for_module(
     build_github_codebase_review_module(),
     core_subgraph=_default_core,
+)
+product_spec_agent = build_pipeline_for_module(
+    build_product_spec_review_module(),
+    core_subgraph=_default_core,
+)
+compliance_agent = build_combined_graph(
+    pr_review=pr_review_agent,
+    codebase_review=codebase_review_agent,
+    product_spec=product_spec_agent,
 )

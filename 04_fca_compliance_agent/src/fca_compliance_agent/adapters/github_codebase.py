@@ -7,6 +7,8 @@ Inbound  `raw_input` -> `analysis_input` (one AnalysisUnit per source/config fil
 
 Outbound `findings_report` -> handled by `adapters/outbound/code_remediator.py` (which uses
     `adapters/outbound/github_client.py` to branch, commit, push, and open a remediation PR).
+    `raw_input["output_type"]` is "remediation_pr" (the default for a GitHub repo) or "report", which only saves local
+    reports. `raw_input["create_pr"]` is the older way to say the same.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from .outbound.code_remediator import (
     render_remediation_pr_body,
 )
 from .outbound.github_client import GitHubCLIAdapter, GitHubClient, run_gh, run_git
+from .output_type import decide_output_type
 
 _REPO_URL = re.compile(r"^https://github\.com/([\w.-]+/[\w.-]+?)(?:\.git)?/?$")
 _REPO = re.compile(r"^[\w.-]+/[\w.-]+$")
@@ -176,6 +179,7 @@ def make_github_codebase_inbound(*, github_client: GitHubClient | None = None):
     def github_codebase_inbound(state: PipelineState) -> dict[str, Any]:
         raw = state.get("raw_input") or {}
         local_ws = raw.get("workspace_path")
+        output_type = decide_output_type("codebase_review", raw)
 
         if local_ws and Path(str(local_ws)).is_dir():
             repo_dir = Path(str(local_ws)).resolve()
@@ -184,7 +188,6 @@ def make_github_codebase_inbound(*, github_client: GitHubClient | None = None):
             units, readme_summary, skipped = collect_codebase_units(repo_dir)
             cloned = False
             workspace_label = str(repo_dir)
-            default_create_pr = False
         else:
             slug, repo_url, branch = _resolve_repo(raw)
             gh_client = github_client or GitHubCLIAdapter(git_runner=_git, gh_runner=_gh)
@@ -194,9 +197,7 @@ def make_github_codebase_inbound(*, github_client: GitHubClient | None = None):
                 units, readme_summary, skipped = collect_codebase_units(clone_dir)
             cloned = True
             workspace_label = f"ephemeral:{slug}@{branch}"
-            default_create_pr = True
 
-        create_pr = bool(raw.get("create_pr", default_create_pr))
         draft_pr = bool(raw.get("draft_pr", False))
         summary = str(raw.get("summary") or readme_summary or f"Codebase compliance review of {repo_url} ({branch}).")
         analysis_input = AnalysisInput(
@@ -215,10 +216,10 @@ def make_github_codebase_inbound(*, github_client: GitHubClient | None = None):
                 "workspace_path": workspace_label,
                 "cloned_remotely": cloned,
                 "files_skipped": skipped,
-                "create_pr": create_pr,
                 "draft_pr": draft_pr,
                 "summary": summary[:2000],
             },
+            "output_type": output_type,
         }
 
     return github_codebase_inbound

@@ -6,7 +6,8 @@ Inbound  `raw_input` -> `analysis_input` (one AnalysisUnit per changed file) + `
 
 Outbound `findings_report` -> markdown + JSON review in `reports/`, and by default ONE PR comment
     via `gh pr comment` when reviewing a GitHub PR (`pr_url` or `repo` + `pr_number`).
-    Pass `raw_input["post_to_github"] = False` to save local reports only. When the pipeline runs
+    `raw_input["output_type"]` is "pr_comment" (the default) or "report", which only saves local reports.
+    `raw_input["post_to_github"] = False` means "report" too. When the pipeline runs
     with `require_human_approval=True`, posting requires a human `approve` or `filter` decision.
 """
 
@@ -26,6 +27,7 @@ from ..domain.models import (
 from ..domain.state import PipelineState
 from ..ports.adapters import ContextModule
 from .outbound.github_client import GitHubCLIAdapter, GitHubClient, run_gh
+from .output_type import decide_output_type
 
 REPORTS_DIR = Path(__file__).resolve().parents[3] / "reports"  # 04_fca_compliance_agent/reports
 
@@ -88,6 +90,7 @@ def make_github_pr_inbound(*, github_client: GitHubClient | None = None):
     def github_pr_inbound(state: PipelineState) -> dict[str, Any]:
         """Inbound adapter: a GitHub PR -> normalised AnalysisInput."""
         raw = state.get("raw_input") or {}
+        output_type = decide_output_type("pr_review", raw)
         repo, number = _resolve_pr(raw)
         client = github_client or GitHubCLIAdapter(gh_runner=_gh)
         meta = client.view_pr(repo, number)
@@ -109,9 +112,9 @@ def make_github_pr_inbound(*, github_client: GitHubClient | None = None):
                 "pr_number": number,
                 "pr_url": meta.get("url"),
                 "head_sha": meta.get("headRefOid"),
-                "post_to_github": bool(raw.get("post_to_github", True)),
                 "files_skipped": diff.count("diff --git ") - len(units),
             },
+            "output_type": output_type,
         }
 
     return github_pr_inbound
@@ -159,6 +162,7 @@ def make_github_pr_outbound(
         """Outbound adapter: write the review to reports/, and post a PR comment via `GitHubClient`."""
         report = state["findings_report"]
         ctx = state.get("adapter_context") or {}
+        output_type = state.get("output_type", "report")
         out_dir = reports_dir or REPORTS_DIR
         out_dir.mkdir(parents=True, exist_ok=True)
         md_path = out_dir / f"{report.report_id}.md"
@@ -172,7 +176,7 @@ def make_github_pr_outbound(
         require_approval = bool(state.get("require_human_approval", False))
         human_approved = decision is not None and decision.action in ("approve", "filter")
         posted, note = False, "Review saved locally; not posted to GitHub."
-        if ctx.get("post_to_github") and ctx.get("pr_number"):
+        if output_type == "pr_comment" and ctx.get("pr_number"):
             if require_approval and not human_approved:
                 note = "Not posted: require_human_approval=True requires a human approve or filter decision."
             else:
@@ -186,6 +190,7 @@ def make_github_pr_outbound(
                         "deliverable_result": DeliverableResult(
                             module_name="pr_review",
                             status="failed",
+                            output_type=output_type,
                             summary=f"Saved locally; posting failed: {e}",
                             artifacts=artifacts,
                         )
@@ -195,6 +200,7 @@ def make_github_pr_outbound(
             "deliverable_result": DeliverableResult(
                 module_name="pr_review",
                 status="completed",
+                output_type=output_type,
                 summary=f"{report.overall_verdict}: {len(report.findings)} finding(s) for {report.target_id}. {note}",
                 artifacts=artifacts,
                 metadata={"posted_to_github": posted, "severity_counts": report.severity_counts()},

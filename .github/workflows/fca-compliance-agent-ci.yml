@@ -45,10 +45,14 @@ jobs:
           from fca_compliance_agent.agent import (
               pr_review_agent,
               codebase_review_agent,
+              product_spec_agent,
+              compliance_agent,
           )
           for name, graph in [
               ('pr_review_agent', pr_review_agent),
               ('codebase_review_agent', codebase_review_agent),
+              ('product_spec_agent', product_spec_agent),
+              ('compliance_agent', compliance_agent),
           ]:
               assert hasattr(graph, 'ainvoke'), f'{name} missing ainvoke'
           print('All compliance agent graphs compiled cleanly.')

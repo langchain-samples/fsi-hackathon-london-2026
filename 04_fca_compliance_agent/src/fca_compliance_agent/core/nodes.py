@@ -324,6 +324,7 @@ def make_human_review_gate_node(default_require_human_approval: bool = False):
                 "target_id": report.target_id,
                 "source_type": report.source_type,
                 "overall_verdict": report.overall_verdict,
+                "output_type": state.get("output_type"),  # what approving will do
                 "executive_summary": report.executive_summary,
                 "findings": [
                     {
@@ -359,6 +360,7 @@ def make_human_review_gate_node(default_require_human_approval: bool = False):
             updates["deliverable_result"] = DeliverableResult(
                 module_name="human_review_gate",
                 status="aborted_by_reviewer",
+                output_type=state.get("output_type"),
                 summary=f"Outbound delivery aborted by human reviewer: {decision.reviewer_notes or 'no notes'}.",
             )
 
