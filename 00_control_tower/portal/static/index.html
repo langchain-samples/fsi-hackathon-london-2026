@@ -66,6 +66,21 @@
   .err { color: var(--bad); font-size: 12px; }
   a { color: var(--accent); }
   .ghost { background: none; border: 1px solid var(--line); color: var(--quiet); border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; }
+  .stage { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; letter-spacing: .5px; text-transform: uppercase; border: 1px solid var(--line); color: var(--quiet); }
+  .s-active { color: var(--good); border-color: var(--good); } .s-under_review { color: var(--warn); border-color: var(--warn); }
+  .s-reassessment_due { color: var(--reg); border-color: var(--reg); } .s-refresh_due { color: var(--bad); border-color: var(--bad); }
+  .hist { margin: 0; padding: 8px 10px; list-style: none; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; max-height: 150px; overflow: auto; font-size: 12.5px; }
+  .hist li { padding: 2px 0; } .hist li.life { color: var(--quiet); font-style: italic; }
+  .hist-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--quiet); }
+  .chat { max-height: 320px; overflow: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+  .msg { padding: 8px 10px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.user { background: #60a5fa22; align-self: flex-end; max-width: 90%; } .msg.agent { background: var(--panel2); border: 1px solid var(--line); }
+  .msg.error { border: 1px solid var(--bad); color: var(--bad); }
+  .chip { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 4px; margin: 0 4px 4px 0; border: 1px solid var(--line); color: var(--quiet); }
+  .chip.skill { color: var(--reg); border-color: var(--reg); }
+  .ask { display: flex; gap: 6px; } .ask input { flex: 1; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit; }
+  .ask button { background: var(--accent); color: #06203f; border: 0; border-radius: 6px; padding: 0 12px; font: inherit; font-weight: 600; cursor: pointer; }
+  .ask button:disabled, .ask input:disabled { opacity: .5; }
   .thresholds { display: flex; gap: 12px; flex-wrap: wrap; }
   .th { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
   .th b { font-size: 15px; } .th.changed { border-color: var(--accent); }
@@ -107,13 +122,27 @@
       <div id="reviews" class="empty">Nothing waiting for a human.</div>
     </div>
     <div class="panel">
+      <h2>Ask the control tower</h2>
+      <div id="chat" class="chat"><div class="empty">Ask about a client's lifecycle, for example "Where is Tomás Ferreira (CUST-026) and what is next?" or "Which clients does PS26-7 affect?" Decisions are still made in the review inbox.</div></div>
+      <form class="ask" onsubmit="ask(event)"><input id="q" placeholder="Ask about a client or a regulation" autocomplete="off"><button id="send">Ask</button></form>
+    </div>
+    <div class="panel">
       <h2>Activity</h2>
       <div id="feed" class="feed"></div>
     </div>
   </div>
 </main>
 <script>
-let lastSeq = 0, done = new Set(), state = null;
+let lastSeq = 0, done = new Set(), state = null, shown = {};
+// Re-render a block only when its data changed, so typing in a note or scrolling a list is not wiped by the poll.
+const paint = (sel, key, html) => { if (shown[sel] !== key) { shown[sel] = key; $(sel).innerHTML = html; return true; } return false; };
+async function ask(ev) {
+  ev.preventDefault();
+  const q = $("#q").value.trim(); if (!q) return;
+  const r = await fetch("/api/chat", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({message: q})});
+  if (!r.ok) { $("#err").textContent = (await r.json()).detail; return; }
+  $("#q").value = ""; poll();
+}
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
 const para = p => p ? `<span class="para">¶ ${esc(p)}</span>` : "";
@@ -138,7 +167,7 @@ document.querySelectorAll(".step").forEach(b => b.onclick = async () => {
 
 async function reset() {
   await fetch("/api/reset", {method: "POST"});
-  lastSeq = 0; done.clear(); $("#feed").innerHTML = "";
+  lastSeq = 0; done.clear(); shown = {}; $("#feed").innerHTML = "";
   document.querySelectorAll(".step").forEach(b => b.classList.remove("done"));
   poll();
 }
@@ -164,11 +193,14 @@ function renderCustomer(c) {
   }).join("");
   return `<div class="panel cust">
     <div class="cust-head"><span class="name">${esc(risk?.name || c.customer_id)}</span>
-      <span class="meta">${esc(c.customer_id)} · card ${esc(c.user_id)}</span><span class="spacer"></span>
+      <span class="meta">${esc(c.customer_id)} · card ${esc(c.user_id)}</span>
+      ${c.client ? `<span class="stage s-${esc(c.client.stage)}">${esc(c.client.stage.replace("_", " "))}</span>` : ""}<span class="spacer"></span>
       ${risk?.previous && risk.previous.rating !== rating ? `<span class="meta">was <b>${esc(risk.previous.rating.toUpperCase())}</b> under ${esc(risk.previous.policy)} →</span>` : ""}
       <span class="rating r-${rating || "none"}">${rating ? rating.toUpperCase() : "NOT RATED"}</span></div>
     ${risk ? `<div class="meta">Rated under <b>${esc(risk.policy)}</b> · ${esc(risk.status.replace("_", " "))}</div><ul class="reasons">${reasons}</ul>` : ""}
     ${c.refresh ? `<div class="flag">KYC refresh triggered by transaction alerts ${para(state.policy.citations.alerts_for_kyc_refresh)}</div>` : ""}
+    ${c.client ? `<div class="hist-title">Client file · assessed under ${esc(c.client.assessed_policy || "nothing yet")}</div>
+      <ul class="hist">${c.client.history.map(e => `<li class="${e.pillar === "lifecycle" ? "life" : ""}">${esc(e.what)}${para(e.paragraph)}</li>`).join("")}</ul>` : ""}
     <div class="thresholds">
       <div class="th ${changed ? "changed" : ""}">Human review below confidence <b>${c.thresholds.confidence}</b></div>
       <div class="th ${changed ? "changed" : ""}">Grey zone <b>${c.thresholds.grey_zone[0]}–${c.thresholds.grey_zone[1] - 1}</b></div>
@@ -202,8 +234,16 @@ async function poll() {
   document.querySelectorAll(".step").forEach(b => b.disabled = !!state.status.running);
   if (state.langsmith_project) $("#ls").textContent = `LangSmith: ${state.langsmith_project}`;
 
-  $("#customers").innerHTML = state.customers.map(renderCustomer).join("");
-  $("#reviews").innerHTML = state.reviews.length ? state.reviews.map(renderReview).join("") : "Nothing waiting for a human.";
+  if (paint("#customers", JSON.stringify([state.customers, state.reviews.map(r => r.case_id), state.policy.citations]), state.customers.map(renderCustomer).join("")))
+    document.querySelectorAll(".hist").forEach(h => h.scrollTop = h.scrollHeight);
+  paint("#reviews", JSON.stringify(state.reviews), state.reviews.length ? state.reviews.map(renderReview).join("") : "Nothing waiting for a human.");
+  const busy = state.status.running === "supervisor chat";
+  $("#q").disabled = $("#send").disabled = !!state.status.running || state.offline;
+  if (state.offline) $("#q").placeholder = "Switched off in offline rehearsal (needs live models)";
+  if (state.chat.length && paint("#chat", JSON.stringify(state.chat) + busy, state.chat.map(m => `<div class="msg ${esc(m.role)}">${
+      m.skills.map(s => `<span class="chip skill">skill: ${esc(s)}</span>`).join("")}${m.tools.map(t => `<span class="chip">${esc(t)}</span>`).join("")}${
+      m.skills.length || m.tools.length ? "<br>" : ""}${esc(m.text)}</div>`).join("") + (busy ? '<div class="msg agent empty">Working…</div>' : "")))
+    $("#chat").scrollTop = $("#chat").scrollHeight;
   $("#reviews").className = state.reviews.length ? "" : "empty";
 
   const ch = state.policy_changes;

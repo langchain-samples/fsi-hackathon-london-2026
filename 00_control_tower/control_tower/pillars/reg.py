@@ -79,6 +79,10 @@ def approve_policy(store: BaseStore, case: dict, answer: dict) -> dict:
 
 
 def _activate(store: BaseStore, firm_id: str, policy: PolicyParams) -> None:
+    changes = diff(active_policy(store, firm_id), policy)
     memory.put_policy(store, policy.model_dump(), firm_id)
+    marked = memory.mark_policy_change(store, policy.source_document, changes)
     memory.log_event(store, "reg", f"Policy {policy.source_document} is live for {firm_id}",
                      {"policy": policy.model_dump()})
+    memory.log_event(store, "reg", f"{len(marked)} client(s) due a re-assessment under {policy.source_document}",
+                     {"customers": marked})

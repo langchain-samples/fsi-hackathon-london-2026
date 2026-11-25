@@ -5,12 +5,17 @@
 
 The page drives the story one step at a time, shows the shared memory as it changes, and lets a reviewer answer
 the cases the pillars park. Steps run in a background thread; the page polls /api/state.
+
+The story buttons call the pillar adapters directly, so the rehearsed demo does not depend on the supervisor. The
+chat box talks to the supervisor (skills over the same store) for questions about a client's lifecycle. The chat
+cannot record a human decision: those go through the review inbox only.
 """
 from __future__ import annotations
 
 import os
 import threading
 import traceback
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -27,6 +32,10 @@ OFFLINE = os.environ.get("CONTROL_TOWER_OFFLINE") == "1"
 if OFFLINE:
     from control_tower import offline
     offline.enable()
+    build_supervisor = None   # the chat needs a real model; offline it is switched off, not faked
+else:
+    from langgraph.checkpoint.memory import InMemorySaver
+    from control_tower.supervisor import build_supervisor
 
 DEMO_CUSTOMERS = ["CUST-026", "CUST-027"]
 DOCUMENT, FIRM = "PS26-7", memory.DEFAULT_FIRM
@@ -35,6 +44,7 @@ STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="FinCrime Control Tower")
 _lock = threading.Lock()
 _status = {"running": None, "error": None}
+_chat = {"log": [], "thread": uuid.uuid4().hex, "agent": None}
 
 
 def _store():
@@ -79,6 +89,25 @@ STEPS = {
 }
 
 
+def _ask_supervisor(message: str) -> None:
+    """One chat turn. The supervisor's tools use the portal's store, so it sees what the buttons did."""
+    if _chat["agent"] is None:
+        _chat["agent"] = build_supervisor(checkpointer=InMemorySaver())
+    config = {"configurable": {"thread_id": _chat["thread"]}, "run_name": "control-tower-chat"}
+    out = _chat["agent"].invoke({"messages": [{"role": "user", "content": message}]}, config)
+    turn = out["messages"][max(i for i, m in enumerate(out["messages"]) if m.type == "human"):]
+    calls = [c for m in turn for c in (getattr(m, "tool_calls", None) or [])]
+    skills = [c["args"].get("file_path", "").split("/")[-2] for c in calls
+              if c["name"] == "read_file" and c["args"].get("file_path", "").endswith("SKILL.md")]
+    tools = [c["name"] for c in calls if c["name"] != "read_file"]
+    _chat["log"].append({"role": "agent", "text": out["messages"][-1].text, "skills": list(dict.fromkeys(skills)),
+                         "tools": tools})
+
+
+class Question(BaseModel):
+    message: str
+
+
 class Answer(BaseModel):
     decision: str
     note: str = ""
@@ -104,12 +133,32 @@ def review(case_id: str, answer: Answer):
     return {"started": case_id}
 
 
+@app.post("/api/chat")
+def chat(question: Question):
+    if OFFLINE:
+        raise HTTPException(400, "The chat needs live models. It is switched off in offline rehearsal.")
+    if not question.message.strip():
+        raise HTTPException(400, "Empty message")
+
+    def work():
+        try:
+            _ask_supervisor(question.message)
+        except Exception as exc:
+            _chat["log"].append({"role": "error", "text": f"The supervisor failed: {exc}", "skills": [], "tools": []})
+            raise
+
+    _run("supervisor chat", work)
+    _chat["log"].append({"role": "user", "text": question.message, "skills": [], "tools": []})
+    return {"started": True}
+
+
 @app.post("/api/reset")
 def reset():
     if _status["running"]:
         raise HTTPException(409, "A step is still running")
     memory.reset_store()
     tm._agents.clear()
+    _chat.update(log=[], thread=uuid.uuid4().hex)
     return {"reset": True}
 
 
@@ -125,6 +174,8 @@ def state(after: int = 0):
         ctx = tm.context_for(user_id, (risk or {}).get("rating"), policy)
         customers.append({
             "customer_id": cid, "user_id": user_id, "risk": risk,
+            "client": {**client, "stage": memory.client_stage(store, cid)} if (client := memory.get_client(store, cid))
+            else None,
             "thresholds": {"confidence": ctx.confidence_threshold, "grey_zone": list(ctx.grey_zone)},
             "transactions": [{**t, "decision": decisions.get(t["transaction_id"])} for t in txs],
             "alerts": memory.alerts_for(store, user_id),
@@ -135,5 +186,5 @@ def state(after: int = 0):
         "offline": OFFLINE, "status": _status, "policy": policy.model_dump(),
         "policy_changes": diff(BASELINE, policy), "customers": customers,
         "reviews": memory.reviews(store), "events": memory.events(store, after),
-        "langsmith_project": project,
+        "langsmith_project": project, "chat": _chat["log"],
     }

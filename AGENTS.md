@@ -33,7 +33,11 @@ control_tower/
   contracts.py   THE CONTRACT: what the supervisor needs from each pillar (KycOutput, TmDecision,
                  TmContextFields, reg_request, brief_from_result, read_policy). Change carefully.
   memory.py      Shared LangGraph Store namespaces: ("policy", firm), ("customer_risk",), ("alerts", user),
-                 ("kyc_refresh",), ("reviews",), ("events",). Also CUST-<->USR- mapping (data/customer_links.jsonl).
+                 ("kyc_refresh",), ("reviews",), ("events",), ("client",). Also CUST-<->USR- mapping
+                 (data/customer_links.jsonl). ("client",) is the client file: lifecycle stage (onboarding, active,
+                 reassessment_due, under_review, refresh_due), policy last assessed under, dated history. Only the
+                 adapters write it (record_client); the supervisor reads it. Approving a policy marks clients
+                 assessed under the old one (mark_policy_change); nothing is re-run without a human asking.
   policy.py      PolicyParams, BASELINE (repo defaults), PS26_7_REFERENCE (gold answer), extract_policy (LLM), diff.
   pillars/kyc.py runs 01 graph, validates KycOutput, adds the PS26-7 overlay (close associates, high-risk
                  countries, source of funds), writes the rating, parks reviews (EDD sign-off, graph interrupts).
@@ -41,14 +45,18 @@ control_tower/
                  trigger (6.5); parks interrupts as review cases and resumes them.
   pillars/reg.py runs 03 agent, extracts policy from the brief, parks it for approval (four-eyes).
   reviews.py     answer_review(store, case_id, answer): one entry point for any human decision.
-  supervisor.py  the supervisor deep agent: 03 as a CompiledSubAgent ("regulatory-analyst"); KYC, TM, refresh and
-                 reviews as tools. Tools use runtime.store (langgraph dev) or memory.get_store().
+  supervisor.py  the supervisor deep agent. It works from skills (agent_home/skills/*/SKILL.md, read-only to the
+                 agent), one per lifecycle stage: onboard-client, daily-monitoring, apply-regulatory-change,
+                 kyc-refresh, client-briefing. All three pillars are tools (no sub-agents). It has no tool to answer
+                 a review. Tools use runtime.store (langgraph dev) or memory.get_store().
   offline.py     ScriptedModel: replays analyst labels/fixtures so everything runs with no API key.
   doctor.py      checks .env, LangSmith login and one gateway model call. Never prints keys.
   settings.py    MODEL from MODEL_NAME in the root .env; illustrative FX rates to GBP.
 agents.py               SUBMISSION: exports supervisor, kyc_agent, transaction_agent, regulatory_agent.
 control_tower.ipynb     SUBMISSION: the story step by step. Commit it WITHOUT outputs.
-portal/app.py + static/index.html   demo UI: 6 story steps, customer cards, review inbox, live policy, activity feed.
+portal/app.py + static/index.html   demo UI: 6 story steps (scripted, call the adapters), customer cards with stage
+                        and client file, review inbox, live policy, activity feed, and a chat box to the supervisor
+                        (live only; switched off in offline mode).
 scenario.py             the story from the CLI.
 evals/control_tower_evals.py        LangSmith datasets + code evaluators (policy extraction, KYC rating, end to end).
 tests/                  conftest.py enables offline mode for all tests; test_contracts.py is what pillar owners run.
@@ -62,7 +70,7 @@ Run from `00_control_tower/` unless noted. The venv is `.venv` at the repo root,
 
 ```bash
 uv run python -m control_tower.doctor                  # live setup check (needs .env)
-uv run pytest -q tests                                 # 17 offline tests; must stay green
+uv run pytest -q tests                                 # 19 offline tests; must stay green
 uv run python scenario.py --offline                    # whole story, scripted model
 uv run python scenario.py                              # whole story, real models, traced to LangSmith
 CONTROL_TOWER_OFFLINE=1 uv run uvicorn portal.app:app --port 8000   # rehearsal portal

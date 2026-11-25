@@ -10,6 +10,11 @@ The pillars never call each other. They meet here, so each one can still run on 
 | ("kyc_refresh",)                | customer_id    | TM pillar           | supervisor -> KYC    |
 | ("reviews",)                    | case_id        | any pillar          | portal / reviewer    |
 | ("events",)                     | sequence no.   | everything          | portal timeline      |
+| ("client",)                     | customer_id    | the adapters (code) | supervisor, portal   |
+
+The client file is the control tower's memory of one client across the whole lifecycle: the stage they are in, the
+policy their last assessment was made under, and a dated history of what happened and why. Only code writes it
+(`record_client`, called by the adapters); the supervisor reads it and never edits it.
 
 The TM project also keeps its own ("decisions", user_id) and ("customer_notes", user_id) namespaces in the same
 store, so the supervisor can read those too.
@@ -143,3 +148,84 @@ def close_review(store: BaseStore, case_id: str, answer: dict) -> None:
     case = get_review(store, case_id)
     if case:
         store.put(("reviews",), case_id, {**case, "status": "closed", "answer": answer})
+
+
+# --- the client file: one record per client across the whole lifecycle -----------------------------------
+
+STAGES = ("onboarding", "active", "reassessment_due", "under_review", "refresh_due")
+
+
+def active_policy_id(store: BaseStore, firm_id: str = DEFAULT_FIRM) -> str:
+    return (get_policy_dict(store, firm_id) or {}).get("source_document", "baseline")
+
+
+def reviews_for_customer(store: BaseStore, customer_id: str) -> list[dict]:
+    """Open cases about this client: KYC cases carry the customer ID, TM cases the linked card user."""
+    user_id = user_for_customer(customer_id)
+    return [r for r in reviews(store)
+            if customer_id in r["case_id"] or (user_id and r["resume"].get("user_id") == user_id)]
+
+
+def client_stage(store: BaseStore, customer_id: str, firm_id: str = DEFAULT_FIRM) -> str:
+    """Where the client is in the lifecycle, worked out from the facts in the store so it cannot drift from them."""
+    risk = get_customer_risk(store, customer_id)
+    if reviews_for_customer(store, customer_id):
+        return "under_review"
+    if risk is None:
+        return "onboarding"
+    if any(f["customer_id"] == customer_id for f in open_refresh_flags(store)):
+        return "refresh_due"
+    if risk.get("policy") != active_policy_id(store, firm_id):
+        return "reassessment_due"
+    return "active"
+
+
+def get_client(store: BaseStore, customer_id: str) -> dict | None:
+    item = store.get(("client",), customer_id)
+    return item.value if item else None
+
+
+def clients(store: BaseStore) -> list[dict]:
+    return sorted((i.value for i in store.search(("client",), limit=1000)), key=lambda c: c["customer_id"])
+
+
+def record_client(store: BaseStore, customer_id: str, what: str | None = None, pillar: str = "",
+                  paragraph: str = "", **fields) -> dict:
+    """Update a client file: set `fields`, add a history line if `what` is given, and refresh the stage.
+
+    A stage change is written to the history too, so the file reads as the client's lifecycle from top to bottom.
+    """
+    client = get_client(store, customer_id) or {
+        "customer_id": customer_id, "user_id": user_for_customer(customer_id), "stage": "onboarding",
+        "assessed_policy": None, "due_changes": [], "history": []}
+    client.update(fields)
+    history = list(client["history"])
+    policy = active_policy_id(store)
+    if what:
+        history.append({"ts": time.time(), "pillar": pillar, "what": what, "paragraph": paragraph,
+                        "policy": policy})
+    stage = client_stage(store, customer_id)
+    if stage != client["stage"]:
+        history.append({"ts": time.time(), "pillar": "lifecycle", "paragraph": "", "policy": policy,
+                        "what": f"Stage: {client['stage']} -> {stage}"})
+    client.update(stage=stage, history=history)
+    store.put(("client",), customer_id, client)
+    return client
+
+
+def mark_policy_change(store: BaseStore, document_id: str, changes: list[dict]) -> list[str]:
+    """A new policy is live: every client last assessed under another policy is now due a re-assessment.
+
+    Nothing is re-run here. The client is only marked, with the changed controls, so a human can choose who to
+    re-assess. Returns the customer IDs that were marked.
+    """
+    due = [{"field": c["field"], "paragraph": c.get("paragraph", "")} for c in changes]
+    paragraphs = ", ".join(dict.fromkeys(c["paragraph"] for c in due if c["paragraph"]))
+    marked = []
+    for client in clients(store):
+        if client["assessed_policy"] and client["assessed_policy"] != document_id:
+            record_client(store, client["customer_id"], pillar="reg", paragraph=paragraphs, due_changes=due,
+                          what=f"{document_id} approved ({len(due)} control changes): re-assessment due; last "
+                               f"assessed under {client['assessed_policy']}")
+            marked.append(client["customer_id"])
+    return marked

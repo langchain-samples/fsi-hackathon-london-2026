@@ -58,7 +58,10 @@ def main(offline: bool) -> dict:
     show("TM after PS26-7", [(d["transaction_id"], d["final_decision"], d["decided_by"]) for d in tm_after])
     show("KYC refresh flags", memory.open_refresh_flags(store))
     show("Open reviews", [r["case_id"] for r in memory.reviews(store)])
-    return {"before": before, "after": after, "tm_before": tm_before, "tm_after": tm_after,
+    client = memory.get_client(store, CUSTOMER)
+    show(f"Client file for {CUSTOMER}: stage {client['stage']}",
+         [f"{h['what']}" + (f" (para {h['paragraph']})" if h["paragraph"] else "") for h in client["history"]])
+    return {"client": client, "before": before, "after": after, "tm_before": tm_before, "tm_after": tm_after,
             "flags": memory.open_refresh_flags(store), "reviews": memory.reviews(store)}
 
 

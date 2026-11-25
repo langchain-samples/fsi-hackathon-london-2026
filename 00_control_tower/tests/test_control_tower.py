@@ -60,6 +60,28 @@ def test_story_end_to_end_offline():
     assert [r["case_id"] for r in out["reviews"]] == ["kyc:CUST-026"]
 
 
+def test_client_file_follows_the_lifecycle():
+    import scenario
+    client = scenario.main(offline=True)["client"]
+    stages = [h["what"] for h in client["history"] if h["pillar"] == "lifecycle"]
+    assert stages[0] == "Stage: onboarding -> active"
+    assert "Stage: active -> reassessment_due" in stages          # PS26-7 approved, nothing re-run yet
+    assert client["stage"] == "under_review" and client["assessed_policy"] == "PS26-7"
+    assert client["due_changes"] == []                            # cleared by the re-assessment
+    cited = {h["paragraph"] for h in client["history"]}
+    assert {"4.1, 4.3", "6.3", "6.5"} <= cited
+
+
+def test_policy_change_marks_only_clients_assessed_under_the_old_policy():
+    store = memory.reset_store()
+    memory.record_client(store, "CUST-026", "KYC: rated LOW", "kyc", assessed_policy="baseline")
+    memory.record_client(store, "CUST-027", "KYC: rated LOW", "kyc", assessed_policy="PS26-7")
+    marked = memory.mark_policy_change(store, "PS26-7", diff(BASELINE, PS26_7_REFERENCE))
+    assert marked == ["CUST-026"]
+    fields = [c["field"] for c in memory.get_client(store, "CUST-026")["due_changes"]]
+    assert "edd_for_pep_family_and_associates" in fields and memory.get_client(store, "CUST-027")["due_changes"] == []
+
+
 def test_supervisor_builds():
     from control_tower.supervisor import build_supervisor
     graph = build_supervisor(model=offline.ScriptedModel())

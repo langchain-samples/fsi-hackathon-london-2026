@@ -100,12 +100,18 @@ def _after_decision(store: BaseStore, tx: dict, policy: PolicyParams) -> dict:
                      {"decision": decision, "alert": is_alert, "hold": hold})
 
     customer_id = memory.customer_for_user(user_id)
+    if is_alert and customer_id:
+        memory.record_client(store, customer_id, f"TM: alert on {tx['transaction_id']} ({tx['merchant']}, "
+                             f"{tx['amount']:,.0f} {tx['currency']}): {decision.get('final_decision')} by "
+                             f"{decision.get('decided_by', '?')}" + ("; policy hold" if hold else ""), "tm")
     if is_alert and customer_id and policy.alerts_for_kyc_refresh:
         n = count_recent_alerts(memory.alerts_for(store, user_id), tx["timestamp"], policy.alert_window_days)
         if n >= policy.alerts_for_kyc_refresh:
             para = policy.citations.get("alerts_for_kyc_refresh", "")
             memory.flag_kyc_refresh(store, customer_id,
                                     f"{n} alerts in {policy.alert_window_days} days (para {para})")
+            memory.record_client(store, customer_id, f"TM: {n} alerts in {policy.alert_window_days} days, KYC "
+                                 "refresh flagged", "tm", para)
             memory.log_event(store, "tm", f"KYC refresh triggered for {customer_id}", {"alerts": n})
     return decision
 
@@ -127,6 +133,11 @@ def run_tm(user_id: str, store: BaseStore, policy: PolicyParams, transaction_ids
     ctx = context_for(user_id, rating, policy)
     memory.log_event(store, "tm", f"Monitoring {user_id} (KYC rating {rating or 'unknown'})", {
         "confidence_threshold": ctx.confidence_threshold, "grey_zone": list(ctx.grey_zone)})
+    if customer_id:
+        memory.record_client(
+            store, customer_id, f"TM: monitoring run as {rating or 'unrated'} risk; auto-decide at confidence "
+            f"{ctx.confidence_threshold}, human review for scores {ctx.grey_zone[0]}-{ctx.grey_zone[1] - 1}", "tm",
+            policy.citations.get("high_risk_confidence_threshold", "") if rating == "high" else "")
     return _process(store, policy, stream, ctx, reviewer_answers, run_tag)
 
 
@@ -143,6 +154,8 @@ def _process(store, policy, stream, ctx, reviewer_answers, tag) -> list[dict]:
                     "kind": "graph", "user_id": tx["user_id"], "remaining": [t["transaction_id"] for t in stream[i + 1:]], "tag": tag,
                     "context": {"confidence_threshold": ctx.confidence_threshold, "grey_zone": list(ctx.grey_zone)}})
                 memory.log_event(store, "tm", f"{tx['transaction_id']} referred to a human", question)
+                if customer_id := memory.customer_for_user(tx["user_id"]):
+                    memory.record_client(store, customer_id, f"TM: {tx['transaction_id']} referred to a human", "tm")
                 return decisions
             answer = reviewer_answers.get(tx["transaction_id"], {"decision": question["agent_decision"]})
             result = agent.invoke(Command(resume=answer), _thread(tx["user_id"], tag), context=ctx)
@@ -156,6 +169,10 @@ def resume_tm(store: BaseStore, case: dict, answer: dict, policy: PolicyParams) 
     memory.close_review(store, case["case_id"], answer)
     user_id = resume["user_id"]
     tx_id = case["case_id"].split(":", 1)[1]
+    customer_id = memory.customer_for_user(user_id)
+    if customer_id:
+        memory.record_client(store, customer_id, f"TM: reviewer decision recorded on {tx_id}: {answer['decision']}",
+                             "tm")
     if resume["kind"] == "hold":
         memory.log_event(store, "tm", f"Reviewer {answer['decision']}d held payment {tx_id}", answer)
         return []
