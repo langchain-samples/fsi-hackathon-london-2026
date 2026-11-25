@@ -29,6 +29,14 @@ from fca_compliance_agent.adapters.chat import build_combined_graph, request_fro
 from fca_compliance_agent.adapters.outbound import code_remediator
 from fca_compliance_agent.adapters.output_type import InvalidInputError, decide_output_type
 from fca_compliance_agent.adapters.product_spec import MAX_UNIT_CHARS, build_product_spec_review_module, split_spec, write_pdf
+from fca_compliance_agent.domain.models import (
+    CodeLocation,
+    DeliverableResult,
+    DocumentLocation,
+    Finding,
+    FindingsReport,
+    PullRequestDiffLocation,
+)
 
 PR = "https://github.com/acme/credit/pull/7"
 REPO = "https://github.com/acme/credit"
@@ -179,6 +187,25 @@ class ChatTest(Combined):
                 self.assertIn("Cancellation", done["messages"][-1].text)
                 self.assertIn("CCA 1974 s.66A", done["messages"][-1].text)
         self.assert_nothing_written()
+
+    async def test_a_long_report_is_shortened_in_chat_but_not_in_the_files(self) -> None:
+        full = await self.send(f"spec: {SPEC}")
+        whole = full["messages"][-1].text
+        findings = full["findings_report"].findings
+        self.assertGreater(len(findings), 1)
+        self.assertNotIn("one line each", whole)
+        room = len(whole) - 1
+        with mock.patch.object(chat, "MAX_REPLY_CHARS", room):
+            done = await self.send(f"spec: {SPEC}")
+        reply, files = done["messages"][-1].text, done["deliverable_result"].artifacts
+        self.assertLessEqual(len(reply), room)
+        self.assertIn("one line each", reply)
+        self.assertIn(files[-1], reply)
+        saved = next(Path(f) for f in files if f.endswith(".md")).read_text()
+        self.assertNotIn("one line each", saved)
+        for finding in findings:
+            self.assertIn(finding.title, reply)
+            self.assertIn(f"- **Fix:** {finding.remediation_guidance}", saved)
 
     async def test_an_attached_pdf(self) -> None:
         source = self.tmp / "source.pdf"
@@ -356,6 +383,67 @@ class ProductSpecTest(unittest.TestCase):
             ):  # fmt: skip
                 with self.subTest(name), self.assertRaises(InvalidInputError):
                     split_spec(name, data)
+
+
+class LongReplyTest(unittest.TestCase):
+    """Studio shows a message of more than 20,000 characters as plain text."""
+
+    def reply(self, kind: str, count: int, *, files: list[str] | None = None, **fields: Any) -> tuple[str, list[Finding]]:
+        location = {
+            "pr_review": PullRequestDiffLocation(file_path="a.py", start_line=1, end_line=2),
+            "codebase_review": CodeLocation(file_path="a.py", start_line=1, end_line=2),
+            "product_spec": DocumentLocation(document_name="s.pdf", page_start=3, page_end=3, section_heading="9. Arrears"),
+        }[kind]
+        severities = ["critical"] * 4 + ["high"] * max(count - 4, 0)
+        findings = [
+            Finding(**{
+                "unit_id": "u", "severity": severities[i], "title": f"Problem {i}.", "location": location,
+                "description": "d" * 500, "remediation_guidance": f"Do {i}." + "g" * 500, **fields,
+            })
+            for i in range(count)
+        ]  # fmt: skip
+        report = FindingsReport(
+            target_id="t", source_type="custom", title="T", overall_verdict="non_compliant",
+            executive_summary="Summary.", findings=findings, units_total=3, units_triaged_in=3,
+        )  # fmt: skip
+        delivered = DeliverableResult(module_name="m", status="completed", summary="s", artifacts=files or [])
+        result = {"findings_report": report, "deliverable_result": delivered, "output_type": "report"}
+        return chat._reply(chat.ReviewRequest(kind, "t", {}, "report", False, True), result), findings
+
+    def test_every_finding_is_shown_the_worst_in_full(self) -> None:
+        for kind in ("pr_review", "codebase_review", "product_spec"):
+            with self.subTest(kind):
+                text, findings = self.reply(kind, 36, files=["/r/REP.md", "/r/REP.json", "https://github.com/x.md"])
+                self.assertLessEqual(len(text), chat.MAX_REPLY_CHARS)
+                self.assertIn("**Findings:** 36", text)
+                self.assertIn("All in full: `/r/REP.md`", text)
+                full = [f for f in findings if f"### [{f.severity.upper()}] {f.title}\n" in text]
+                self.assertGreater(len(full), 4)
+                self.assertEqual(full, findings[: len(full)])
+                for finding in full:
+                    self.assertIn(f"- **Fix:** {finding.remediation_guidance}\n", text)
+                where = "(9. Arrears, page 3)" if kind == "product_spec" else "(`a.py` L1-2)"
+                for finding in findings[len(full) :]:
+                    self.assertIn(f"- **[HIGH]** {finding.title} {where}\n", text)
+                self.assertIn(f"**{len(full)} of 36 findings are in full here and {36 - len(full)} as one line each.**", text)
+                self.assertTrue(text.endswith("a human must confirm._"))
+
+    def test_a_short_report_is_unchanged(self) -> None:
+        text, _ = self.reply("pr_review", 5)
+        self.assertNotIn("one line each", text)
+
+    def test_content_that_looks_like_a_heading(self) -> None:
+        text, _ = self.reply("pr_review", 36, title="Same", description="### [HIGH] Other\n" + "d" * 500, suggested_change="### x")
+        self.assertLessEqual(len(text), chat.MAX_REPLY_CHARS)
+        self.assertEqual(text.count("] Same\n") + text.count("]** Same ("), 36)
+        self.assertEqual(text.count("```") % 2, 0)
+
+    def test_more_than_one_lines_can_show_says_so(self) -> None:
+        for count, fields in ((600, {}), (3, {"suggested_change": "x" * 30_000})):
+            text, _ = self.reply("codebase_review", count, **fields)
+            self.assertLessEqual(len(text), chat.MAX_REPLY_CHARS)
+            self.assertEqual("cut short" in text, count == 600)
+            self.assertIn("this run's `findings_report`", text)
 
 
 class StudioTest(unittest.TestCase):
