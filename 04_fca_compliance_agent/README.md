@@ -1,0 +1,73 @@
+# 04 — FCA Handbook & Consumer Credit Act Compliance Agent
+
+Hexagonal, LangGraph-based compliance analysis agent designed to plug interchangeably into multiple I/O contexts:
+
+1. **PR Code Review** (`gh` CLI PR link → inline PR comments)
+2. **Existing Codebase Review** (GitHub repo URL → agentic remediation PR via Git + `gh` CLI)
+3. **Product Spec Review** (Incoming PDF → PDF Findings Report)
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for full architecture diagrams, port contracts, MCP integration guide, and module blueprints.
+
+## Package Layout
+
+```text
+04_fca_compliance_agent/
+├── ARCHITECTURE.md                  # Full architectural specification & diagrams
+├── langgraph.json                   # LangGraph Studio / CLI entrypoint
+├── pyproject.toml                   # Package metadata & optional [mcp] extra
+├── src/fca_compliance_agent/
+│   ├── domain/                      # Pure Pydantic v2 models & LangGraph state schemas
+│   ├── ports/                       # Protocol interfaces (Regulatory, LLM, I/O Adapters)
+│   ├── core/                        # Core map-reduce LangGraph subgraph + pipeline builder + HITL gate
+│   ├── adapters/
+│   │   ├── regulatory/              # Mock FCA/CCA knowledge bases + MCP adapters (stdio / HTTP)
+│   │   ├── llm/                     # LangChain Gateway adapter + deterministic Mock analyzer
+│   │   ├── inbound/                 # Stub Inbound Adapter nodes for all 3 modules
+│   │   └── outbound/                # Stub Outbound Adapter nodes (incl. agentic subgraph stub for Module 2)
+│   └── agent.py                     # Composition root & default compiled graph
+└── tests/
+    └── test_pipeline.py             # End-to-end tests for map-reduce, all 3 modules, HITL, MCP contract
+```
+
+## Quick Start
+
+From the repository root:
+
+```bash
+uv sync --all-packages
+uv run pytest 04_fca_compliance_agent/tests
+```
+
+To enable real MCP server connectivity (for the FCA Handbook RAG and Consumer Credit Act MCP servers):
+
+```bash
+uv sync --all-packages --extra mcp
+```
+
+## Swapping Context Modules
+
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+from fca_compliance_agent import (
+    build_compliance_pipeline,
+    build_core_analysis_subgraph,
+    MockFCAHandbookAdapter,
+    MockConsumerCreditActAdapter,
+    MockComplianceAnalyzer,
+    build_codebase_review_module,
+)
+
+core = build_core_analysis_subgraph(
+    fca_port=MockFCAHandbookAdapter(),
+    cca_port=MockConsumerCreditActAdapter(),
+    analyzer_port=MockComplianceAnalyzer(),
+)
+
+module = build_codebase_review_module()
+pipeline = build_compliance_pipeline(
+    inbound_adapter=module.inbound_node,
+    core_subgraph=core,
+    outbound_adapter=module.outbound_node,
+    checkpointer=InMemorySaver(),
+)
+```

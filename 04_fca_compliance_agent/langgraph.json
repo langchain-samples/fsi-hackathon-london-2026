@@ -1,0 +1,10 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "fca_compliance_pr_review": "./src/fca_compliance_agent/agent.py:pr_review_agent",
+    "fca_compliance_codebase_review": "./src/fca_compliance_agent/agent.py:codebase_review_agent",
+    "fca_compliance_product_spec": "./src/fca_compliance_agent/agent.py:product_spec_agent"
+  },
+  "env": "../.env",
+  "python_version": "3.13"
+}
