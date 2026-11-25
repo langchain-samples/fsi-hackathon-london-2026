@@ -54,9 +54,12 @@ control_tower/
   settings.py    MODEL from MODEL_NAME in the root .env; illustrative FX rates to GBP.
 agents.py               SUBMISSION: exports supervisor, kyc_agent, transaction_agent, regulatory_agent.
 control_tower.ipynb     SUBMISSION: the story step by step. Commit it WITHOUT outputs.
-portal/app.py + static/index.html   demo UI: 6 story steps (scripted, call the adapters), customer cards with stage
-                        and client file, review inbox, live policy, activity feed, and a chat box to the supervisor
-                        (live only; switched off in offline mode).
+portal/app.py + static/index.html   demo UI, four tabs. Dashboard: counts, Scan (screens the next new applications,
+                        monitors onboarded card clients), and one action queue for every human decision from every
+                        pillar (approve/reject, POST /api/action/{id}), plus a chat box to the supervisor (live only).
+                        KYC: all applicants, PEP and sanctions lists, client file. Transaction monitoring: card clients,
+                        decisions next to analyst labels. Regulatory change: internal (firm, providers, brief) and
+                        clients (control changes, who is affected).
 scenario.py             the story from the CLI.
 evals/control_tower_evals.py        LangSmith datasets + code evaluators (policy extraction, KYC rating, end to end).
 tests/                  conftest.py enables offline mode for all tests; test_contracts.py is what pillar owners run.
