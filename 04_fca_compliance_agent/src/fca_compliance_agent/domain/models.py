@@ -147,6 +147,33 @@ class RegulatoryCitation(BaseModel):
     url: str | None = None
 
 
+class RegulatorySearch(BaseModel):
+    """Search candidates, and any requested sourcebook that could not be searched at all."""
+
+    passages: list[RegulatoryPassage] = Field(default_factory=list)
+    not_in_index: list[str] = Field(default_factory=list)
+
+
+class RegulatorySection(BaseModel):
+    """A whole FCA Handbook section, or the part of a long one around the provision asked for."""
+
+    section: str
+    passages: list[RegulatoryPassage]
+    complete: bool = True
+    outline: list[str] = Field(default_factory=list, description="Provisions left out of a long section")
+    definitions: dict[str, str] = Field(default_factory=dict)
+    links: list[str] = Field(default_factory=list, description="References to provisions outside this section")
+
+
+class CitationCheck(BaseModel):
+    """The result of checking a quote against its source, without a model."""
+
+    ok: bool
+    problems: list[str] = Field(default_factory=list)
+    binding: bool | None = Field(default=None, description="False for guidance; None if not known")
+    fictional: bool = Field(default=False, description="True if the source is sample or mock text")
+
+
 # ---------------------------------------------------------------------------
 # Core Output Contract (Core -> HITL Gate -> Outbound Adapter)
 # ---------------------------------------------------------------------------

@@ -34,6 +34,7 @@ from fca_compliance_agent import (
     Finding,
     MCPConsumerCreditActAdapter,
     MCPFCAHandbookAdapter,
+    MCPToolError,
     MCPToolMapping,
     MockConsumerCreditActAdapter,
     MockFCAHandbookAdapter,
@@ -519,6 +520,61 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
             self.assertIn("cca_lookup", called_tools)
             self.assertIn("cca_get_section", called_tools)
             self.assertEqual(len(mock_gh.posted_comments), 1)
+
+
+class TestMCPErrorsAreNotEvidence(unittest.IsolatedAsyncioTestCase):
+    """A failed tool call must never become a passage, nor look like "no rules found"."""
+
+    def _failures(self) -> list[Any]:
+        block = SimpleNamespace(type="text", text="Unknown tool: search_fca_handbook")
+        return [
+            SimpleNamespace(is_error=True, content=[block], structured_content=None),  # mcp 2.x
+            SimpleNamespace(isError=True, content=[block], structuredContent=None),  # mcp 1.x
+            {"isError": True, "content": [{"type": "text", "text": block.text}]},  # raw JSON
+            SimpleNamespace(is_error=True, content=[], structured_content=None),  # no message
+        ]
+
+    async def test_every_adapter_method_raises(self) -> None:
+        for failure in self._failures():
+
+            async def caller(name: str, arguments: dict[str, Any], result: Any = failure) -> Any:
+                return result
+
+            fca = MCPFCAHandbookAdapter(caller=caller)
+            cca = MCPConsumerCreditActAdapter(caller=caller)
+            for call in (
+                lambda: fca.search_rules("affordability"),
+                lambda: fca.get_rule("CONC 5.2A.4R"),
+                lambda: cca.query_provisions("withdrawal"),
+                lambda: cca.get_document(),
+            ):
+                with self.subTest(failure=failure), self.assertRaises(MCPToolError):
+                    await call()
+
+    async def test_a_guessed_cca_section_does_not_stop_the_review(self) -> None:
+        def failing(text: str) -> Any:
+            async def caller(name: str, arguments: dict[str, Any]) -> Any:
+                return SimpleNamespace(is_error=True, content=[SimpleNamespace(text=text)])
+
+            return MCPConsumerCreditActAdapter(caller=caller)
+
+        self.assertEqual(await failing("Error executing tool: no section 999").get_document("999"), [])
+        with self.assertRaises(MCPToolError):
+            await failing("Unknown tool: get_consumer_credit_act_document").get_document("66A")
+
+    async def test_success_and_empty_results_still_work(self) -> None:
+        payload = json.dumps([{"reference": "CONC 5.2A.4R", "text": "An error in the rule text."}])
+        ok = SimpleNamespace(is_error=False, content=[SimpleNamespace(text=payload)])
+
+        async def found(name: str, arguments: dict[str, Any]) -> Any:
+            return ok
+
+        async def nothing(name: str, arguments: dict[str, Any]) -> Any:
+            return SimpleNamespace(is_error=False, content=[])
+
+        passages = await MCPFCAHandbookAdapter(caller=found).search_rules("affordability")
+        self.assertEqual([p.reference for p in passages], ["CONC 5.2A.4R"])
+        self.assertEqual(await MCPFCAHandbookAdapter(caller=nothing).search_rules("x"), [])
 
 
 class TestHexagonalArchitectureBoundaries(unittest.TestCase):

@@ -5,6 +5,7 @@ from .mcp import (
     MCPConsumerCreditActAdapter,
     MCPFCAHandbookAdapter,
     MCPServerConfig,
+    MCPToolError,
     MCPToolMapping,
 )
 from .mock import MockConsumerCreditActAdapter, MockFCAHandbookAdapter
@@ -14,6 +15,7 @@ __all__ = [
     "MCPConsumerCreditActAdapter",
     "MCPFCAHandbookAdapter",
     "MCPServerConfig",
+    "MCPToolError",
     "MCPToolMapping",
     "MockConsumerCreditActAdapter",
     "MockFCAHandbookAdapter",

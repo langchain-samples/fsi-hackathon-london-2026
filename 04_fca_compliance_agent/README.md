@@ -107,6 +107,28 @@ The HTTP server exposes all four tools at the same URL. Set both variables to th
 - **FCA content** is the mock Handbook corpus from `MockFCAHandbookAdapter`, because the Handbook text is not in this
   repo yet. Those passages carry `"corpus": "mock"`.
 
+## FCA Handbook RAG
+
+[`handbook_rag`](handbook_rag/README.md) is an MCP server over the FCA Handbook: `search_fca_handbook`,
+`get_fca_section` and `check_fca_citation`. Run it in its own terminal, with `fca-regulatory-mcp` for the Consumer Credit Act,
+then set both URLs in `.env`:
+
+```bash
+cd 04_fca_compliance_agent/handbook_rag && uv run --no-sync python mcp_server.py
+```
+
+```bash
+uv run --no-sync fca-regulatory-mcp --http --port 8001
+```
+
+```
+FCA_MCP_URL=http://127.0.0.1:8765/mcp
+CCA_MCP_URL=http://127.0.0.1:8001/mcp
+```
+
+Each person loads the real text first (SYSC, PRIN, COBS, CONC and the Glossary): see its README. It has no UK GDPR, which
+only the mock rules cover, so with `FCA_MCP_URL` set, UK GDPR rules are not searched.
+
 ## Swapping Context Modules
 
 ```python

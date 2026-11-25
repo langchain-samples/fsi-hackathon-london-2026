@@ -1,4 +1,4 @@
-# One environment for all three topics. Run `uv sync --all-packages` here, in the repo root, to install everything
+# One environment for all topics. Run `uv sync --all-packages` here, in the repo root, to install everything
 # into .venv. Each topic keeps its own pyproject.toml, which lists that topic's dependencies.
 [project]
 name = "fsi-hackathon"

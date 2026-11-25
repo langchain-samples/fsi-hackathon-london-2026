@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from ..domain.models import RegulatoryPassage
+from ..domain.models import CitationCheck, RegulatoryPassage, RegulatorySearch, RegulatorySection
 
 
 @runtime_checkable
@@ -27,6 +27,29 @@ class FCAHandbookPort(Protocol):
 
     async def get_rule(self, reference: str) -> RegulatoryPassage | None:
         """Fetch a specific FCA Handbook rule by canonical reference (e.g. 'CONC 4.2.5R')."""
+        ...
+
+
+@runtime_checkable
+class FCAHandbookResearchPort(Protocol):
+    """What the Handbook RAG offers a reviewing agent: search widely, read in depth, check the quote."""
+
+    async def search(
+        self,
+        query: str,
+        *,
+        sourcebooks: list[str] | None = None,
+        top_k: int = 8,
+    ) -> RegulatorySearch:
+        """Candidate provisions. The text may be a snippet."""
+        ...
+
+    async def get_section(self, reference: str) -> RegulatorySection:
+        """The whole section a provision belongs to. Raises if it is not in the Handbook index."""
+        ...
+
+    async def check_citation(self, reference: str, quote: str) -> CitationCheck:
+        """Check without a model that a provision is in force and the quote is word for word."""
         ...
 
 
