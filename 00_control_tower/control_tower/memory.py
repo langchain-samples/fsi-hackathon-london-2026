@@ -11,6 +11,7 @@ The pillars never call each other. They meet here, so each one can still run on 
 | ("reviews",)                    | case_id        | any pillar          | portal / reviewer    |
 | ("events",)                     | sequence no.   | everything          | portal timeline      |
 | ("client",)                     | customer_id    | the adapters (code) | supervisor, portal   |
+| ("tm_summary",)                 | customer_id    | TM pillar           | KYC refresh, portal  |
 
 The client file is the control tower's memory of one client across the whole lifecycle: the stage they are in, the
 policy their last assessment was made under, and a dated history of what happened and why. Only code writes it
@@ -112,8 +113,9 @@ def alerts_for(store: BaseStore, user_id: str) -> list[dict]:
     return sorted((i.value for i in store.search(("alerts", user_id), limit=1000)), key=lambda a: a["timestamp"])
 
 
-def flag_kyc_refresh(store: BaseStore, customer_id: str, reason: str) -> None:
-    store.put(("kyc_refresh",), customer_id, {"customer_id": customer_id, "reason": reason, "open": True})
+def flag_kyc_refresh(store: BaseStore, customer_id: str, reason: str, **extra) -> None:
+    """`extra` carries optional fields such as TM's `due_by` (10 business days after the trigger, para 5.5)."""
+    store.put(("kyc_refresh",), customer_id, {"customer_id": customer_id, "reason": reason, "open": True, **extra})
 
 
 def open_refresh_flags(store: BaseStore) -> list[dict]:
@@ -124,6 +126,18 @@ def close_refresh_flag(store: BaseStore, customer_id: str) -> None:
     item = store.get(("kyc_refresh",), customer_id)
     if item:
         store.put(("kyc_refresh",), customer_id, {**item.value, "open": False})
+
+
+# --- TM conduct score: green, amber or red for the period since the last review ------------------------------
+
+def put_tm_summary(store: BaseStore, customer_id: str, summary: dict) -> None:
+    """Written by the TM adapter when a KYC refresh opens, so the refresh reviewer sees how the client behaved."""
+    store.put(("tm_summary",), customer_id, summary)
+
+
+def get_tm_summary(store: BaseStore, customer_id: str) -> dict | None:
+    item = store.get(("tm_summary",), customer_id)
+    return item.value if item else None
 
 
 # --- human review cases ---------------------------------------------------------------------------------

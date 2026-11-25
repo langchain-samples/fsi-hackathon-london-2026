@@ -291,6 +291,7 @@ def decide(action_id: str, answer: Answer):
 def reference():
     firm = REFERENCE["firm"]
     return {"pep_list": REFERENCE["pep_list"], "sanctions_list": REFERENCE["sanctions_list"],
+            "tm_rule_sets": tm.rule_sets(),
             "firm": {**firm, "providers": [{**REFERENCE["providers"].get(p["provider_id"], {}), **p}
                                            for p in firm.get("providers", [])]}}
 
@@ -327,6 +328,34 @@ def reset():
     return {"reset": True}
 
 
+def _expected_band(label: dict | None) -> str | None:
+    """The band the analyst label implies: blocks high, clear approvals low, ambiguous cases medium."""
+    if not label:
+        return None
+    return "high" if label["decision"] == "block" else "medium" if label.get("ambiguous") else "low"
+
+
+def _tm_metrics(transactions: list[dict]) -> dict:
+    """The TM controls, measured on this client's payments. Review routing is the safety metric."""
+    decided = [t for t in transactions if t["decision"]]
+    needs_human = [t for t in transactions if (t["decision"] or {}).get("band") in ("medium", "high")
+                   or (t["decision"] or {}).get("decided_by") == "human" or t["review"]]
+    reached = [t for t in needs_human if t["review"] or (t["decision"] or {}).get("decided_by") == "human"]
+    labelled = [t for t in transactions if t["expected_band"]]
+    sampled = [t for t in decided if t["decision"].get("sample")]
+    return {
+        "decided": len(decided), "by_rules": sum(1 for t in decided if t["decision"]["decided_by"] == "rules"),
+        "models_ran": sum(1 for t in decided if t["decision"].get("investigations")),
+        "needs_human": len(needs_human), "reached_human": len(reached),
+        "labelled": len(labelled), "band_agrees": sum(1 for t in labelled if t["band"] == t["expected_band"]),
+        "sampled": len(sampled),
+        "sample_escalated": sum(1 for t in sampled if (t["decision"].get("report") or {}).get("next_step")
+                                not in (None, "close_explained")),
+        "audit_returns": sum(t["decision"].get("audit_returns") or 0 for t in decided),
+        "facts_failed": sum(len((t["decision"].get("audit_detail") or {}).get("facts_failed", [])) for t in decided),
+    }
+
+
 def _detail(cid: str) -> dict:
     store, policy = _store(), _policy()
     user_id = memory.user_for_customer(cid)
@@ -339,12 +368,30 @@ def _detail(cid: str) -> dict:
            "tm_waiting": any(r["pillar"] == "tm" for r in memory.reviews_for_customer(store, cid))}
     if user_id:
         decisions = {i.key: i.value for i in store.search(("decisions", user_id), limit=100)}
-        ctx = tm.context_for(user_id, (risk or {}).get("rating"), policy)
+        reasons = [r["text"] if isinstance(r, dict) else str(r) for r in (risk or {}).get("reasons", [])]
+        ctx = tm.context_for(user_id, (risk or {}).get("rating"), policy, reasons)
+        preview = tm.triage_preview(user_id, ctx)
+        reviews = {r["case_id"].split(":", 1)[1]: r for r in memory.reviews(store)
+                   if r["pillar"] == "tm" and r["resume"].get("user_id") == user_id}
+        transactions = []
+        for t in tm.project()["utils.transaction_processing"].transaction_stream(user_id):
+            tx_id, decision, review = t["transaction_id"], decisions.get(t["transaction_id"]), reviews.get(t["transaction_id"])
+            label = REFERENCE["analyst_labels"].get(tx_id)
+            # The band the payment was decided in; before monitoring runs, what the rules say under today's settings.
+            band = (decision or {}).get("band") or (review or {}).get("question", {}).get("band") or preview[tx_id]["band"]
+            transactions.append({**t, "decision": decision, "analyst": label, "expected_band": _expected_band(label),
+                                 "triage": preview[tx_id], "band": band,
+                                 "review": {"id": review["case_id"], "question": review["question"]} if review else None})
+        flag = next((f for f in memory.open_refresh_flags(store) if f["customer_id"] == cid), None)
         out.update(thresholds={"confidence": ctx.confidence_threshold, "grey_zone": list(ctx.grey_zone)},
-                   transactions=[{**t, "decision": decisions.get(t["transaction_id"]),
-                                  "analyst": REFERENCE["analyst_labels"].get(t["transaction_id"])} for t in
-                                 tm.project()["utils.transaction_processing"].transaction_stream(user_id)],
-                   alerts=memory.alerts_for(store, user_id))
+                   tm={"rating": ctx.kyc_rating, "rule_set": ctx.rule_set, "cut_offs": list(ctx.grey_zone),
+                       "client_band": "high_risk" if ctx.kyc_rating == "high" else "standard",
+                       "confidence_threshold": ctx.confidence_threshold, "policy": ctx.policy_version,
+                       "cut_off_paragraph": policy.citations.get("high_risk_review_score", "")
+                       if ctx.kyc_rating == "high" else ""},
+                   transactions=transactions, alerts=memory.alerts_for(store, user_id),
+                   conduct=tm.conduct_score(store, user_id), refresh_flag=flag,
+                   tm_summary=memory.get_tm_summary(store, cid), metrics=_tm_metrics(transactions))
     return out
 
 
