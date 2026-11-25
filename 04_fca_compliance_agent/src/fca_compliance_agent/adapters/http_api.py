@@ -987,6 +987,36 @@ def create_app(
     return app
 
 
+_QUIET_GET_PREFIXES = (
+    "/health",
+    "/api/status",
+    "/api/findings",
+    "/api/targets",
+    "/api/models",
+    "/api/runs",
+    "/api/reports",
+)
+
+
+class _QuietPollingAccessFilter(logging.Filter):
+    """Drop 200 OK polling/health uvicorn access logs so agent action logs stay readable."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 5:
+            method = str(args[1])
+            path = str(args[2])
+            status = int(args[4]) if str(args[4]).isdigit() else 0
+            if method == "GET" and status < 400 and any(path == p or path.startswith(p + "/") or path.startswith(p + "?") for p in _QUIET_GET_PREFIXES):
+                return False
+        msg = record.getMessage()
+        if '"GET ' in msg and '" 200' in msg:
+            for prefix in _QUIET_GET_PREFIXES:
+                if f'"GET {prefix} ' in msg or f'"GET {prefix}?' in msg or f'"GET {prefix}/' in msg:
+                    return False
+        return True
+
+
 def main(argv: list[str] | None = None) -> None:
     import uvicorn
 
@@ -1012,6 +1042,9 @@ def main(argv: list[str] | None = None) -> None:
         stream=sys.stdout,
         force=True,
     )
+    logging.getLogger("uvicorn.access").addFilter(_QuietPollingAccessFilter())
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     app = create_app(default_org=args.github_org)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 

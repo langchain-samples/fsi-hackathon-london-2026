@@ -541,6 +541,15 @@ class ManagedService:
 
 
 _PRINT_LOCK = threading.Lock()
+_NOISY_ACCESS_RE = re.compile(
+    r'"GET (?:/|/health|/api/status|/api/findings|/api/targets|/api/models|/api/runs|/api/reports|/api/backend/|/static/|/favicon\.ico)(?:[/? ][^"]*)? HTTP/[^"]*" (?:200|304)\b'
+    r'|HTTP Request: GET http://(?:127\.0\.0\.1|localhost):\d+/(?:health|api/status|api/findings|api/targets|api/models|api/runs)[^"]*" 200\b'
+)
+
+
+def is_noisy_log_line(line: str) -> bool:
+    """Return True for routine 200/304 polling, health, or static asset access logs."""
+    return bool(_NOISY_ACCESS_RE.search(line))
 
 
 def _stream_pipe(tag: str, pipe: Any, recent_lines: deque[str]) -> None:
@@ -550,6 +559,8 @@ def _stream_pipe(tag: str, pipe: Any, recent_lines: deque[str]) -> None:
             if not line:
                 continue
             recent_lines.append(line)
+            if is_noisy_log_line(line):
+                continue
             with _PRINT_LOCK:
                 print(f"[{tag}] {line}", flush=True)
     except OSError:
@@ -772,6 +783,7 @@ def run_stack(args: argparse.Namespace) -> None:
                         str(args.ui_port),
                         "--workers",
                         "1",
+                        "--no-access-log",
                     ],
                     cwd=Path(args.ui_dir),
                     env=os.environ.copy(),
