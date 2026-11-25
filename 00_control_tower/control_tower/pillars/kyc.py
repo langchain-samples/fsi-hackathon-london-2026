@@ -140,6 +140,13 @@ def run_kyc(customer_id: str, store: BaseStore, policy: PolicyParams, model: str
 
     memory.put_customer_risk(store, customer_id, record)
     memory.close_refresh_flag(store, customer_id)
+    was = f" (was {previous['rating'].upper()} under {previous['policy']})" \
+        if previous and previous["rating"] != rating else ""
+    paragraphs = ", ".join(dict.fromkeys(r["paragraph"] for r in reasons if r["level"] == rating and r["paragraph"]))
+    waiting = "; waiting for a human decision" if record["status"] == "pending_review" else ""
+    memory.record_client(store, customer_id, f"KYC: rated {rating.upper()} under {policy.source_document}{was}{waiting}",
+                         "kyc", paragraphs, name=record["name"], assessed_policy=policy.source_document,
+                         due_changes=[], **({"onboarded": True} if record["status"] == "approved" else {}))
     memory.log_event(store, "kyc", f"{record['name']} rated {rating.upper()}",
                      {"customer_id": customer_id, "reasons": record["reasons"], "status": record["status"]})
     return record
@@ -160,5 +167,7 @@ def resume_kyc(store: BaseStore, case: dict, answer: dict) -> dict:
                   reviewer_notes=answer.get("notes", ""))
     memory.put_customer_risk(store, customer_id, record)
     memory.close_review(store, case["case_id"], answer)
+    memory.record_client(store, customer_id, f"KYC: reviewer decision recorded, customer {record['status']}", "kyc",
+                         **({"onboarded": True} if record["status"] == "approved" else {}))
     memory.log_event(store, "kyc", f"Reviewer {record['status']} {record.get('name', customer_id)}", answer)
     return record

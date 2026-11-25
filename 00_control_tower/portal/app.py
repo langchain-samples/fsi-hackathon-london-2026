@@ -3,14 +3,23 @@
     uv run uvicorn portal.app:app --port 8000            # live models, traced to LangSmith
     CONTROL_TOWER_OFFLINE=1 uv run uvicorn portal.app:app --port 8000   # scripted rehearsal, no API key
 
-The page drives the story one step at a time, shows the shared memory as it changes, and lets a reviewer answer
-the cases the pillars park. Steps run in a background thread; the page polls /api/state.
+Four tabs. The Dashboard is the admin's high-level view: counts, and one consolidated queue of every decision
+waiting for a human across the pillars, each answered with approve or reject. "Scan" sweeps the pillars for new
+work (new applications to screen, onboarded clients' payments to monitor). The KYC, Transaction monitoring and
+Regulatory change tabs each show one pillar in full. Work runs in a background thread; the page polls /api/state.
+
+The action buttons call the pillar adapters directly, so the demo does not depend on the supervisor. The
+chat box talks to the supervisor (skills over the same store) for questions about a client's lifecycle. The chat
+cannot record a human decision: those go through the review inbox only.
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 import threading
 import traceback
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -27,14 +36,57 @@ OFFLINE = os.environ.get("CONTROL_TOWER_OFFLINE") == "1"
 if OFFLINE:
     from control_tower import offline
     offline.enable()
+    build_supervisor = None   # the chat needs a real model; offline it is switched off, not faked
+else:
+    from langgraph.checkpoint.memory import InMemorySaver
+    from control_tower.supervisor import build_supervisor
 
-DEMO_CUSTOMERS = ["CUST-026", "CUST-027"]
-DOCUMENT, FIRM = "PS26-7", memory.DEFAULT_FIRM
+FIRM = memory.DEFAULT_FIRM
+DOCS_DIR = REPO_ROOT / "03_document_summary_agent/data/documents"
+DOCUMENTS = sorted(p.stem for p in DOCS_DIR.glob("*.md"))
+OFFLINE_DOCUMENTS = ["PS26-7"]   # the only regulation the scripted model has an answer for
+
+
+def _applicants() -> dict[str, str]:
+    """Every applicant in the 01 data, as customer_id -> name. The name is read from the application text only to
+    label the register before the client is onboarded; after that the KYC record's name is used."""
+    names = {l["customer_id"]: l["name"] for l in memory._links()}
+    out = {}
+    for line in (REPO_ROOT / "01_kyc_agent/data/applications.jsonl").read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            row = json.loads(line)
+            found = [m for m in re.findall(r"[A-ZÀ-Ý][\w'’-]+(?: [A-ZÀ-Ý][\w'’-]+)+", row["application"].replace("I'm ", ""))
+                     if m.split()[0] not in ("New", "Account", "Full", "Date", "My")]
+            out[row["customer_id"]] = names.get(row["customer_id"]) or (found[0] if found else "")
+    return out
+
+
+APPLICANTS = _applicants()
+SCAN_BATCH = int(os.environ.get("CONTROL_TOWER_SCAN_BATCH", "5"))   # new applications screened per scan
+
+
+def _rows(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+REFERENCE = {
+    "pep_list": _rows(REPO_ROOT / "01_kyc_agent/data/pep_list.jsonl"),
+    "sanctions_list": _rows(REPO_ROOT / "01_kyc_agent/data/sanctions_list.jsonl"),
+    "analyst_labels": {r["transaction_id"]: r for r in
+                       _rows(REPO_ROOT / "02_transaction_monitoring_agent/data/analyst_labels.jsonl")},
+    "firm": next(f for f in _rows(REPO_ROOT / "03_document_summary_agent/data/firms.jsonl") if f["firm_id"] == FIRM),
+    "providers": {p["provider_id"]: p for p in
+                  _rows(REPO_ROOT / "03_document_summary_agent/data/third_party_providers.jsonl")},
+}
+_monitored: dict[str, tuple] = {}   # customer_id -> (rating, policy) their payments were last scored under
+# Offline, the scripted model only knows the clients with fixtures, so only they can be run.
+RUNNABLE = {l["customer_id"] for l in memory._links()} if OFFLINE else set(APPLICANTS)
 STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="FinCrime Control Tower")
 _lock = threading.Lock()
 _status = {"running": None, "error": None}
+_chat = {"log": [], "thread": uuid.uuid4().hex, "agent": None}
 
 
 def _store():
@@ -62,21 +114,125 @@ def _run(name: str, fn) -> None:
     threading.Thread(target=work, daemon=True).start()
 
 
-def _tag() -> str:
-    return "after" if _policy().source_document != "baseline" else "before"
+def _monitor(customer_id: str) -> None:
+    """Score the client's card payments afresh under the settings in force now (rating and live policy)."""
+    user_id = memory.user_for_customer(customer_id)
+    tm.start_replay(_store(), user_id)
+    _monitored[customer_id] = ((memory.get_customer_risk(_store(), customer_id) or {}).get("rating"),
+                               _policy().source_document)
+    tm.run_tm(user_id, _store(), _policy(), run_tag=uuid.uuid4().hex[:6])
 
 
-STEPS = {
-    "onboard": lambda: [kyc.run_kyc(c, _store(), _policy()) for c in DEMO_CUSTOMERS],
-    "monitor": lambda: [tm.run_tm(memory.user_for_customer(c), _store(), _policy(), run_tag=_tag())
-                        for c in DEMO_CUSTOMERS],
-    "regulation": lambda: (
-        reg.publish_policy_from_brief(DOCUMENT, (REPO_ROOT / "03_document_summary_agent/data/documents"
-                                                 / f"{DOCUMENT}.md").read_text(), FIRM, _store())
-        if OFFLINE else reg.run_reg(DOCUMENT, FIRM, _store())),
-    "refresh": lambda: [kyc.run_kyc(f["customer_id"], _store(), _policy())
-                        for f in memory.open_refresh_flags(_store())],
-}
+def _refresh(customer_id: str) -> None:
+    if any(f["customer_id"] == customer_id for f in memory.open_refresh_flags(_store())):
+        kyc.run_kyc(customer_id, _store(), _policy())
+
+
+def _onboarded(cid: str) -> bool:
+    return bool((memory.get_client(_store(), cid) or {}).get("onboarded"))
+
+
+def _monitor_due(cid: str) -> bool:
+    """An onboarded card client whose payments have not been scored under their current rating and live policy."""
+    risk = memory.get_customer_risk(_store(), cid) or {}
+    return (_onboarded(cid) and bool(memory.user_for_customer(cid)) and cid in RUNNABLE
+            and _monitored.get(cid) != (risk.get("rating"), _policy().source_document)
+            and not any(r["pillar"] == "tm" for r in memory.reviews_for_customer(_store(), cid)))
+
+
+def _scan() -> None:
+    """Sweep the pillars for new work. Nothing here decides anything: decisions land in the action queue."""
+    new = [c for c in APPLICANTS if c in RUNNABLE and memory.get_client(_store(), c) is None]
+    # Clients with a card account first, so the ones monitoring can follow up on are screened early.
+    new.sort(key=lambda c: memory.user_for_customer(c) is None)
+    memory.log_event(_store(), "tower", f"Scan: {len(new)} new application(s) in the queue, screening "
+                     f"{min(len(new), SCAN_BATCH)}")
+    for cid in new[:SCAN_BATCH]:
+        kyc.run_kyc(cid, _store(), _policy())
+    for cid in [c for c in APPLICANTS if _monitor_due(c)]:
+        _monitor(cid)
+
+
+def _actions() -> list[dict]:
+    """Every decision waiting for a human, from every pillar, in one list. Each is answered approve or reject."""
+    store, out = _store(), []
+    for r in memory.reviews(store):
+        q = r["question"]
+        cid = r["case_id"].split(":", 1)[1] if r["pillar"] == "kyc" else memory.customer_for_user(
+            r["resume"].get("user_id", "")) if r["pillar"] == "tm" else None
+        detail = [*q.get("risk_reasons", []), *q.get("why_review", []),
+                  *(f"{c['field']}: {c['before']} -> {c['after']} (para {c['paragraph']})" for c in q.get("changes", []))]
+        if q.get("reason"):
+            detail.insert(0, f"Agent suggests {q.get('agent_decision')} (score {q.get('risk_score')}, confidence "
+                             f"{q.get('confidence')}): {q['reason']}")
+        kind = {"kyc": "New account" if cid and not _onboarded(cid) else "Existing client: KYC decision",
+                "tm": "Payment review", "reg": "Policy change"}[r["pillar"]]
+        subject = APPLICANTS.get(cid, "") if cid else q.get("document_id", "")
+        if q.get("transaction_id"):
+            subject += f" · {q['transaction_id']}"
+        out.append({"id": r["case_id"], "pillar": r["pillar"], "kind": kind, "subject": subject, "customer_id": cid,
+                    "question": q.get("question", "Decision needed"), "detail": detail,
+                    "reject": "block" if r["pillar"] == "tm" else "reject"})
+    for f in memory.open_refresh_flags(store):
+        cid = f["customer_id"]
+        if not memory.reviews_for_customer(store, cid):
+            out.append({"id": f"refresh:{cid}", "pillar": "kyc", "kind": "KYC refresh", "customer_id": cid,
+                        "subject": APPLICANTS.get(cid, cid), "question": "Run a KYC refresh for this client?",
+                        "detail": [f"Transaction monitoring flagged them: {f['reason']}"], "reject": "reject"})
+    live = memory.active_policy_id(store)
+    for c in memory.clients(store):
+        cid = c["customer_id"]
+        if c["assessed_policy"] != live and not memory.reviews_for_customer(store, cid) \
+                and not any(a["id"] == f"refresh:{cid}" for a in out):
+            changes = ", ".join(f"{d['field']} (para {d['paragraph']})" for d in c["due_changes"][:4])
+            out.append({"id": f"reassess:{cid}", "pillar": "kyc", "kind": "Re-assessment", "customer_id": cid,
+                        "subject": APPLICANTS.get(cid, cid),
+                        "question": f"Re-assess this client under {live}?", "reject": None,
+                        "detail": [f"Last assessed under {c['assessed_policy']}; the live policy is {live}.",
+                                   *([f"Changed controls include: {changes}"] if changes else [])]})
+    return out
+
+
+def _decide(action_id: str, payload: dict) -> None:
+    kind, _, cid = action_id.partition(":")
+    if kind == "refresh" and payload["decision"] != "approve":
+        memory.close_refresh_flag(_store(), cid)
+        memory.record_client(_store(), cid, "KYC refresh dismissed by reviewer" +
+                             (f": {payload['notes']}" if payload["notes"] else ""), "kyc")
+    elif kind in ("refresh", "reassess"):
+        kyc.run_kyc(cid, _store(), _policy())
+    else:
+        answer_review(_store(), action_id, payload)
+
+
+ACTIONS = {"onboard": lambda c: kyc.run_kyc(c, _store(), _policy()), "monitor": _monitor, "refresh": _refresh}
+
+
+def _brief(document_id: str) -> None:
+    if OFFLINE:  # the 03 deep agent needs a real model; feed the document text in as the brief instead
+        reg.publish_policy_from_brief(document_id, (DOCS_DIR / f"{document_id}.md").read_text(), FIRM, _store())
+    else:
+        reg.run_reg(document_id, FIRM, _store())
+
+
+def _ask_supervisor(message: str) -> None:
+    """One chat turn. The supervisor's tools use the portal's store, so it sees what the buttons did."""
+    if _chat["agent"] is None:
+        _chat["agent"] = build_supervisor(checkpointer=InMemorySaver())
+    config = {"configurable": {"thread_id": _chat["thread"]}, "run_name": "control-tower-chat"}
+    out = _chat["agent"].invoke({"messages": [{"role": "user", "content": message}]}, config)
+    turn = out["messages"][max(i for i, m in enumerate(out["messages"]) if m.type == "human"):]
+    calls = [c for m in turn for c in (getattr(m, "tool_calls", None) or [])]
+    skills = [c["args"].get("file_path", "").split("/")[-2] for c in calls
+              if c["name"] == "read_file" and c["args"].get("file_path", "").endswith("SKILL.md")]
+    tools = [c["name"] for c in calls if c["name"] != "read_file"]
+    _chat["log"].append({"role": "agent", "text": out["messages"][-1].text, "skills": list(dict.fromkeys(skills)),
+                         "tools": tools})
+
+
+class Question(BaseModel):
+    message: str
+    customer_id: str = ""
 
 
 class Answer(BaseModel):
@@ -89,19 +245,75 @@ def index():
     return FileResponse(STATIC / "index.html")
 
 
-@app.post("/api/step/{name}")
-def step(name: str):
-    if name not in STEPS:
-        raise HTTPException(404, f"No step {name}")
-    _run(name, STEPS[name])
-    return {"started": name}
+@app.post("/api/client/{customer_id}/{action}")
+def client_action(customer_id: str, action: str):
+    if action not in ACTIONS or customer_id not in APPLICANTS:
+        raise HTTPException(404, f"No action {action} for {customer_id}")
+    if customer_id not in RUNNABLE:
+        raise HTTPException(400, "Offline rehearsal only covers the scripted clients. Run live for the others.")
+    if action == "monitor":
+        user_id = memory.user_for_customer(customer_id)
+        if not user_id:
+            raise HTTPException(400, f"{customer_id} has no card account, so there is nothing to monitor")
+        if memory.get_customer_risk(_store(), customer_id) is None:
+            raise HTTPException(400, "Onboard the client first: monitoring thresholds come from the KYC rating")
+        if any(r["pillar"] == "tm" for r in memory.reviews_for_customer(_store(), customer_id)):
+            raise HTTPException(400, "A payment is waiting in the review inbox. Answer it before monitoring again.")
+    _run(f"{action} {customer_id}", lambda: ACTIONS[action](customer_id))
+    return {"started": action}
 
 
-@app.post("/api/review/{case_id}")
-def review(case_id: str, answer: Answer):
+@app.post("/api/regulation/{document_id}")
+def regulation(document_id: str):
+    if document_id not in (OFFLINE_DOCUMENTS if OFFLINE else DOCUMENTS):
+        raise HTTPException(404, f"No document {document_id}" + (" in offline rehearsal" if OFFLINE else ""))
+    _run(f"brief {document_id}", lambda: _brief(document_id))
+    return {"started": document_id}
+
+
+@app.post("/api/scan")
+def scan():
+    _run("scan", _scan)
+    return {"started": "scan"}
+
+
+@app.post("/api/action/{action_id}")
+def decide(action_id: str, answer: Answer):
+    """The one door for a human decision, whichever pillar raised it."""
+    if not any(a["id"] == action_id for a in _actions()):
+        raise HTTPException(404, f"No open action {action_id}")
     payload = {"decision": answer.decision, "notes": answer.note, "note": answer.note}
-    _run(f"review {case_id}", lambda: answer_review(_store(), case_id, payload))
-    return {"started": case_id}
+    _run(f"decision on {action_id}", lambda: _decide(action_id, payload))
+    return {"started": action_id}
+
+
+@app.get("/api/reference")
+def reference():
+    firm = REFERENCE["firm"]
+    return {"pep_list": REFERENCE["pep_list"], "sanctions_list": REFERENCE["sanctions_list"],
+            "firm": {**firm, "providers": [{**REFERENCE["providers"].get(p["provider_id"], {}), **p}
+                                           for p in firm.get("providers", [])]}}
+
+
+@app.post("/api/chat")
+def chat(question: Question):
+    if OFFLINE:
+        raise HTTPException(400, "The chat needs live models. It is switched off in offline rehearsal.")
+    if not question.message.strip():
+        raise HTTPException(400, "Empty message")
+
+    def work():
+        try:
+            who = question.customer_id
+            context = f"[Client selected in the portal: {who} {APPLICANTS.get(who, '')}]\n" if who in APPLICANTS else ""
+            _ask_supervisor(context + question.message)
+        except Exception as exc:
+            _chat["log"].append({"role": "error", "text": f"The supervisor failed: {exc}", "skills": [], "tools": []})
+            raise
+
+    _run("supervisor chat", work)
+    _chat["log"].append({"role": "user", "text": question.message, "skills": [], "tools": []})
+    return {"started": True}
 
 
 @app.post("/api/reset")
@@ -110,30 +322,66 @@ def reset():
         raise HTTPException(409, "A step is still running")
     memory.reset_store()
     tm._agents.clear()
+    _monitored.clear()
+    _chat.update(log=[], thread=uuid.uuid4().hex)
     return {"reset": True}
 
 
-@app.get("/api/state")
-def state(after: int = 0):
+def _detail(cid: str) -> dict:
     store, policy = _store(), _policy()
-    customers = []
-    for cid in DEMO_CUSTOMERS:
-        user_id = memory.user_for_customer(cid)
+    user_id = memory.user_for_customer(cid)
+    risk, client = memory.get_customer_risk(store, cid), memory.get_client(store, cid)
+    out = {"customer_id": cid, "user_id": user_id, "name": (risk or {}).get("name") or APPLICANTS[cid], "risk": risk,
+           "client": {**client, "stage": memory.client_stage(store, cid)} if client else None,
+           "onboarded": bool((client or {}).get("onboarded")), "monitor_due": _monitor_due(cid),
+           "runnable": cid in RUNNABLE, "thresholds": None, "transactions": [], "alerts": [],
+           "refresh": any(f["customer_id"] == cid for f in memory.open_refresh_flags(store)),
+           "tm_waiting": any(r["pillar"] == "tm" for r in memory.reviews_for_customer(store, cid))}
+    if user_id:
         decisions = {i.key: i.value for i in store.search(("decisions", user_id), limit=100)}
-        txs = tm.project()["utils.transaction_processing"].transaction_stream(user_id)
-        risk = memory.get_customer_risk(store, cid)
         ctx = tm.context_for(user_id, (risk or {}).get("rating"), policy)
-        customers.append({
-            "customer_id": cid, "user_id": user_id, "risk": risk,
-            "thresholds": {"confidence": ctx.confidence_threshold, "grey_zone": list(ctx.grey_zone)},
-            "transactions": [{**t, "decision": decisions.get(t["transaction_id"])} for t in txs],
-            "alerts": memory.alerts_for(store, user_id),
-            "refresh": any(f["customer_id"] == cid for f in memory.open_refresh_flags(store)),
-        })
-    project = os.environ.get("LANGSMITH_PROJECT", "")
+        out.update(thresholds={"confidence": ctx.confidence_threshold, "grey_zone": list(ctx.grey_zone)},
+                   transactions=[{**t, "decision": decisions.get(t["transaction_id"]),
+                                  "analyst": REFERENCE["analyst_labels"].get(t["transaction_id"])} for t in
+                                 tm.project()["utils.transaction_processing"].transaction_stream(user_id)],
+                   alerts=memory.alerts_for(store, user_id))
+    return out
+
+
+@app.get("/api/state")
+def state(after: int = 0, customer: str = ""):
+    store, policy = _store(), _policy()
+    register = []
+    for cid, name in APPLICANTS.items():
+        risk, client = memory.get_customer_risk(store, cid) or {}, memory.get_client(store, cid)
+        register.append({
+            "customer_id": cid, "name": risk.get("name") or name, "rating": risk.get("rating"),
+            "stage": memory.client_stage(store, cid) if client else "not_screened",
+            "status": risk.get("status") or "not_screened", "onboarded": bool((client or {}).get("onboarded")),
+            "policy": risk.get("policy"), "reasons": risk.get("reasons", []),
+            "has_card": bool(memory.user_for_customer(cid)), "runnable": cid in RUNNABLE})
+    actions = _actions()
+    brief = next((e for e in reversed(memory.events(store)) if e["title"].startswith("Brief ready for ")), None)
+    live = policy.source_document
     return {
         "offline": OFFLINE, "status": _status, "policy": policy.model_dump(),
-        "policy_changes": diff(BASELINE, policy), "customers": customers,
-        "reviews": memory.reviews(store), "events": memory.events(store, after),
-        "langsmith_project": project,
+        "policy_changes": diff(BASELINE, policy), "clients": register, "actions": actions,
+        "kpis": {
+            "new_applications": sum(1 for c in register if c["stage"] == "not_screened"),
+            "awaiting_decision": len(actions),
+            "onboarded": sum(1 for c in register if c["onboarded"]),
+            "rejected": sum(1 for c in register if c["status"] == "rejected"),
+            "refresh_or_reassess": sum(1 for a in actions if a["kind"] in ("KYC refresh", "Re-assessment")),
+            "payments_for_review": sum(1 for a in actions if a["pillar"] == "tm"),
+            "monitoring_due": sum(1 for c in register if _monitor_due(c["customer_id"])),
+        },
+        "customer": _detail(customer) if customer in APPLICANTS else None,
+        "card_clients": [_detail(c["customer_id"]) for c in register if c["has_card"]],
+        "documents": OFFLINE_DOCUMENTS if OFFLINE else DOCUMENTS,
+        "brief": {"document": brief["title"].removeprefix("Brief ready for "), "text": brief["detail"]["brief"]}
+        if brief else None,
+        "affected": [{"customer_id": c["customer_id"], "name": c["name"], "policy": c["policy"], "rating": c["rating"]}
+                     for c in register if c["policy"] and c["policy"] != live],
+        "events": memory.events(store, after), "langsmith_project": os.environ.get("LANGSMITH_PROJECT", ""),
+        "chat": _chat["log"],
     }

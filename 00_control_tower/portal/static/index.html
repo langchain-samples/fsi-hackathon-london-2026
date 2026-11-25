@@ -18,7 +18,28 @@
   .badge.offline { color: var(--warn); border-color: var(--warn); }
   .badge.live { color: var(--good); border-color: var(--good); }
   .spacer { flex: 1; }
-  main { display: grid; grid-template-columns: 250px 1fr 360px; gap: 16px; padding: 16px 24px; }
+  main { padding: 16px 24px; }
+  .tabs { display: flex; gap: 4px; padding: 0 24px; border-bottom: 1px solid var(--line); }
+  .tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--quiet); padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  .tab.on { color: var(--ink); border-bottom-color: var(--accent); } .tab .n { background: var(--warn); color: #3a2a00; border-radius: 999px; font-size: 11px; padding: 1px 6px; margin-left: 6px; }
+  .view { display: none; } .view.on { display: grid; gap: 16px; }
+  .g-dash { grid-template-columns: 1fr 380px; } .g-split { grid-template-columns: 1fr 1fr; } .g-kyc { grid-template-columns: 1.3fr 1fr; }
+  @media (max-width: 1000px) { .g-dash, .g-split, .g-kyc { grid-template-columns: 1fr; } }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; }
+  .kpi b { display: block; font-size: 26px; line-height: 1.1; } .kpi span { color: var(--quiet); font-size: 12px; } .kpi.hot b { color: var(--warn); }
+  .scan { background: var(--accent); color: #06203f; border: 0; border-radius: 8px; padding: 8px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+  .scan:disabled { opacity: .5; cursor: wait; }
+  .action { background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  .action .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .action .subj { font-weight: 600; }
+  .action ul { margin: 6px 0 8px; padding-left: 18px; color: var(--quiet); font-size: 12.5px; }
+  .action .row { display: flex; gap: 8px; } .action input { flex: 1; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+  .action .btn { flex: none; padding: 7px 16px; }
+  tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--panel2); } tr.sel td { background: var(--panel2); }
+  .p-tower { background: #60a5fa22; color: var(--accent); }
+  pre.brief { white-space: pre-wrap; font: 12.5px/1.5 inherit; max-height: 420px; overflow: auto; margin: 0; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+  .st-approved { color: var(--good); } .st-rejected { color: var(--bad); } .st-pending_review { color: var(--warn); } .st-not_screened { color: var(--quiet); }
+  .match { color: var(--good); } .miss { color: var(--bad); font-weight: 600; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
   .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--quiet); margin: 0 0 10px; }
   .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -66,6 +87,33 @@
   .err { color: var(--bad); font-size: 12px; }
   a { color: var(--accent); }
   .ghost { background: none; border: 1px solid var(--line); color: var(--quiet); border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; }
+  .clients { max-height: 430px; overflow: auto; margin: 0 -6px; }
+  .cl { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; color: var(--ink); border: 1px solid transparent; border-radius: 6px; padding: 6px; cursor: pointer; font: inherit; }
+  .cl:hover { background: var(--panel2); } .cl.sel { background: var(--panel2); border-color: var(--accent); }
+  .cl .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .cl .id { color: var(--quiet); font-size: 11px; }
+  .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+  .dot.low { background: var(--good); } .dot.medium { background: var(--warn); } .dot.high { background: var(--bad); }
+  .search, select { width: 100%; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; font: inherit; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .act { background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; font: inherit; font-weight: 600; }
+  .act:hover:not(:disabled) { border-color: var(--accent); } .act:disabled { opacity: .45; cursor: not-allowed; }
+  .act.next { border-color: var(--accent); color: var(--accent); }
+  .next-line { font-size: 13px; } .next-line b { color: var(--accent); }
+  .stage { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; letter-spacing: .5px; text-transform: uppercase; border: 1px solid var(--line); color: var(--quiet); }
+  .s-active { color: var(--good); border-color: var(--good); } .s-under_review { color: var(--warn); border-color: var(--warn); }
+  .s-not_onboarded, .s-onboarding { color: var(--quiet); } .s-reassessment_due { color: var(--reg); border-color: var(--reg); } .s-refresh_due { color: var(--bad); border-color: var(--bad); }
+  .hist { margin: 0; padding: 8px 10px; list-style: none; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; max-height: 150px; overflow: auto; font-size: 12.5px; }
+  .hist li { padding: 2px 0; } .hist li.life { color: var(--quiet); font-style: italic; }
+  .hist-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--quiet); }
+  .chat { max-height: 320px; overflow: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+  .msg { padding: 8px 10px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.user { background: #60a5fa22; align-self: flex-end; max-width: 90%; } .msg.agent { background: var(--panel2); border: 1px solid var(--line); }
+  .msg.error { border: 1px solid var(--bad); color: var(--bad); }
+  .chip { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 4px; margin: 0 4px 4px 0; border: 1px solid var(--line); color: var(--quiet); }
+  .chip.skill { color: var(--reg); border-color: var(--reg); }
+  .ask { display: flex; gap: 6px; } .ask input { flex: 1; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit; }
+  .ask button { background: var(--accent); color: #06203f; border: 0; border-radius: 6px; padding: 0 12px; font: inherit; font-weight: 600; cursor: pointer; }
+  .ask button:disabled, .ask input:disabled { opacity: .5; }
   .thresholds { display: flex; gap: 12px; flex-wrap: wrap; }
   .th { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
   .th b { font-size: 15px; } .th.changed { border-color: var(--accent); }
@@ -74,143 +122,225 @@
 <body>
 <header>
   <h1>FinCrime Control Tower</h1>
-  <span class="sub">KYC, transaction monitoring and regulatory change: one supervisor, one memory</span>
+  <span class="sub">Harbour Mutual Bank · one supervisor over KYC, transaction monitoring and regulatory change</span>
   <span id="mode" class="badge">…</span>
   <span class="spacer"></span>
   <span id="status" class="status"></span>
   <a id="ls" href="https://smith.langchain.com" target="_blank" rel="noopener">Open LangSmith</a>
   <button class="ghost" onclick="reset()">Reset</button>
 </header>
+<nav class="tabs">
+  <button class="tab" data-tab="dash">Dashboard<span class="n" id="n-dash" hidden></span></button>
+  <button class="tab" data-tab="kyc">KYC</button>
+  <button class="tab" data-tab="tm">Transaction monitoring</button>
+  <button class="tab" data-tab="reg">Regulatory change</button>
+</nav>
 <main>
-  <div class="col">
-    <div class="panel">
-      <h2>The story</h2>
-      <button class="step" data-step="onboard"><span class="n">1</span><span>Onboard customers <small><span class="pill p-kyc">KYC</span>today's rules</small></span></button>
-      <button class="step" data-step="monitor"><span class="n">2</span><span>Monitor card payments <small><span class="pill p-tm">TM</span>thresholds from KYC rating</small></span></button>
-      <button class="step" data-step="regulation"><span class="n">3</span><span>PS26-7 lands <small><span class="pill p-reg">REG</span>brief, then propose controls</small></span></button>
-      <button class="step" data-step="onboard" data-label="rescreen"><span class="n">4</span><span>Re-screen under PS26-7 <small><span class="pill p-kyc">KYC</span>close associates, EDD</small></span></button>
-      <button class="step" data-step="monitor" data-label="remonitor"><span class="n">5</span><span>Monitor under PS26-7 <small><span class="pill p-tm">TM</span>stricter for high risk</small></span></button>
-      <button class="step" data-step="refresh"><span class="n">6</span><span>Process KYC refresh <small><span class="pill p-kyc">KYC</span>alerts re-open the file</small></span></button>
-      <div id="err" class="err"></div>
-    </div>
-    <div class="panel">
-      <h2>Live policy</h2>
-      <div id="policy" class="empty">Baseline: the repo's default controls.</div>
-    </div>
-  </div>
+  <div id="err" class="err" style="margin-bottom:8px"></div>
 
-  <div class="col" id="customers"></div>
+  <section class="view g-dash" id="v-dash">
+    <div class="col">
+      <div class="kpis" id="kpis"></div>
+      <div class="panel">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <h2 style="margin:0">Actions waiting for you</h2><span class="spacer"></span>
+          <span class="meta">Scan screens new applications and monitors onboarded clients' payments</span>
+          <button class="scan" id="scan" onclick="post('/api/scan')">Scan</button>
+        </div>
+        <div id="actions" class="empty">Nothing waiting. Press Scan to look for new work.</div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="panel">
+        <h2>Ask the control tower</h2>
+        <div id="chat" class="chat"><div class="empty">Ask the supervisor about any client or regulation, for example "Where is Tomás Ferreira (CUST-026) and what is next?" or "Which clients does PS26-7 affect?" It explains and prepares; decisions are made in the action queue.</div></div>
+        <form class="ask" onsubmit="ask(event)"><input id="q" placeholder="Ask about a client or a regulation" autocomplete="off"><button id="send">Ask</button></form>
+      </div>
+      <div class="panel"><h2>Activity</h2><div id="feed" class="feed"></div></div>
+    </div>
+  </section>
 
-  <div class="col">
-    <div class="panel">
-      <h2>Review inbox</h2>
-      <div id="reviews" class="empty">Nothing waiting for a human.</div>
+  <section class="view g-kyc" id="v-kyc">
+    <div class="col">
+      <div class="panel">
+        <h2>Customers</h2>
+        <input id="find" class="search" placeholder="Search by name or ID" oninput="shown['#register'] = null; renderRegister()">
+        <div id="register"></div>
+      </div>
+      <div class="view on g-split">
+        <div class="panel"><h2>PEP list</h2><div id="pep"></div></div>
+        <div class="panel"><h2>Sanctions list</h2><div id="sanctions"></div></div>
+      </div>
     </div>
-    <div class="panel">
-      <h2>Activity</h2>
-      <div id="feed" class="feed"></div>
+    <div class="col" id="customer"></div>
+  </section>
+
+  <section class="view" id="v-tm">
+    <div class="meta">Existing clients with a card account. Payments are scored by the agent with thresholds set by the client's KYC rating; uncertain ones go to a human. The analyst label is the ground truth from the data set.</div>
+    <div id="tm"></div>
+  </section>
+
+  <section class="view g-split" id="v-reg">
+    <div class="col">
+      <div class="panel">
+        <h2>Regulatory change manager</h2>
+        <select id="doc"></select>
+        <button class="act" id="brief" style="width:100%" onclick="post('/api/regulation/' + $('#doc').value)">Brief this document for our firm</button>
+      </div>
+      <div class="panel"><h2>Internal: our firm</h2><div id="firm"></div></div>
+      <div class="panel"><h2>Internal: the brief (obligations for the firm)</h2><div id="briefText" class="empty">No document briefed yet.</div></div>
     </div>
-  </div>
+    <div class="col">
+      <div class="panel"><h2>Clients: controls that change</h2><div id="policy" class="empty">Baseline: the default controls. No regulatory change is live.</div></div>
+      <div class="panel"><h2>Clients: who is affected</h2><div id="affected" class="empty">No client is out of date with the live policy.</div></div>
+    </div>
+  </section>
 </main>
 <script>
-let lastSeq = 0, done = new Set(), state = null;
+let lastSeq = 0, state = null, ref = null, shown = {};
+let tab = localStorage.getItem("tab") || "dash", selected = localStorage.getItem("client") || "";
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
 const para = p => p ? `<span class="para">¶ ${esc(p)}</span>` : "";
+const words = s => String(s).replace(/_/g, " ");
+// Re-render a block only when its data changed, so typing in a note or scrolling a list is not wiped by the poll.
+const paint = (sel, key, html) => { if (shown[sel] !== key) { shown[sel] = key; $(sel).innerHTML = html; return true; } return false; };
 const fieldNames = {
-  edd_for_pep_family_and_associates: "EDD for PEP family and close associates",
-  high_risk_countries: "High-risk third countries",
-  source_of_funds_threshold_gbp: "Source-of-funds evidence above (£)",
-  high_risk_confidence_threshold: "High-risk: human below confidence",
-  high_risk_review_score: "High-risk: human at risk score ≥",
-  high_risk_merchant_categories: "High-risk merchant categories",
-  high_risk_merchant_limit_gbp: "High-risk merchant limit (£)",
-  alerts_for_kyc_refresh: "Alerts that trigger KYC refresh",
+  edd_for_pep_family_and_associates: "EDD for PEP family and close associates", high_risk_countries: "High-risk third countries",
+  source_of_funds_threshold_gbp: "Source-of-funds evidence above (£)", high_risk_confidence_threshold: "High-risk: human below confidence",
+  high_risk_review_score: "High-risk: human at risk score ≥", high_risk_merchant_categories: "High-risk merchant categories",
+  high_risk_merchant_limit_gbp: "High-risk merchant limit (£)", alerts_for_kyc_refresh: "Alerts that trigger KYC refresh",
   alert_window_days: "Alert window (days)", edd_for_peps: "EDD for PEPs",
 };
 const fmt = v => typeof v === "number" ? v.toLocaleString() : Array.isArray(v) ? (v.length ? v.join(", ") : "none") : (v === null ? "none" : v === true ? "yes" : v === false ? "no" : v);
 
-document.querySelectorAll(".step").forEach(b => b.onclick = async () => {
-  const r = await fetch(`/api/step/${b.dataset.step}`, {method: "POST"});
-  if (!r.ok) { $("#err").textContent = (await r.json()).detail; return; }
-  done.add(b.dataset.label || b.dataset.step); b.classList.add("done"); poll();
-});
+function show(t) {
+  tab = t; localStorage.setItem("tab", t);
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  document.querySelectorAll("main > .view").forEach(v => v.classList.toggle("on", v.id === "v-" + t));
+}
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => show(b.dataset.tab));
+function pick(id) { selected = id; localStorage.setItem("client", id); shown = {}; show("kyc"); poll(); }
 
-async function reset() {
-  await fetch("/api/reset", {method: "POST"});
-  lastSeq = 0; done.clear(); $("#feed").innerHTML = "";
-  document.querySelectorAll(".step").forEach(b => b.classList.remove("done"));
+async function post(url, body) {
+  const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  $("#err").textContent = r.ok ? "" : (await r.json()).detail;
   poll();
 }
+const decide = (id, decision) => post(`/api/action/${encodeURIComponent(id)}`, {decision, note: document.getElementById("note-" + id)?.value || ""});
+async function reset() { await fetch("/api/reset", {method: "POST"}); lastSeq = 0; shown = {}; $("#feed").innerHTML = ""; poll(); }
+async function ask(ev) {
+  ev.preventDefault();
+  const q = $("#q").value.trim(); if (!q) return;
+  $("#q").value = ""; post("/api/chat", {message: q, customer_id: ""});
+}
 
-async function answer(caseId, decision) {
-  const note = document.getElementById("note-" + caseId)?.value || "";
-  await fetch(`/api/review/${encodeURIComponent(caseId)}`, {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({decision, note})});
-  poll();
+function renderAction(a) {
+  return `<div class="action"><div class="top"><span class="pill p-${esc(a.pillar)}">${esc(a.pillar.toUpperCase())}</span><b>${esc(a.kind)}</b>
+      <span class="subj">${a.customer_id ? `<a href="#" onclick="pick('${esc(a.customer_id)}');return false">${esc(a.subject)}</a>` : esc(a.subject)}</span>
+      <span class="spacer"></span><span class="meta">${esc(a.id)}</span></div>
+    <div>${esc(a.question)}</div>
+    <ul>${a.detail.map(d => `<li>${esc(fieldNames[d.split(":")[0]] ? d.replace(d.split(":")[0], fieldNames[d.split(":")[0]]) : d)}</li>`).join("")}</ul>
+    <div class="row"><input id="note-${esc(a.id)}" placeholder="Reviewer note (optional)">
+      <button class="btn ok" onclick="decide('${esc(a.id)}','approve')">Approve</button>
+      ${a.reject ? `<button class="btn no" onclick="decide('${esc(a.id)}','${esc(a.reject)}')">${a.reject === "block" ? "Block" : "Reject"}</button>` : ""}</div></div>`;
+}
+
+function renderRegister() {
+  const q = $("#find").value.trim().toLowerCase();
+  const rows = state.clients.filter(c => !q || (c.name + " " + c.customer_id).toLowerCase().includes(q));
+  paint("#register", JSON.stringify([rows, selected]), `<table><thead><tr><th>Customer</th><th>Rating</th><th>Decision</th><th>Stage</th></tr></thead><tbody>${rows.map(c =>
+    `<tr class="pick ${c.customer_id === selected ? "sel" : ""}" onclick="pick('${esc(c.customer_id)}')"><td>${esc(c.name || c.customer_id)} <span class="by">${esc(c.customer_id)}${c.has_card ? " · card" : ""}</span></td>
+     <td>${c.rating ? `<span class="rating r-${esc(c.rating)}">${esc(c.rating.toUpperCase())}</span>` : ""}</td>
+     <td class="st-${esc(c.status)}">${esc(words(c.status))}</td><td>${c.stage !== "not_screened" ? `<span class="stage s-${esc(c.stage)}">${esc(words(c.stage))}</span>` : ""}</td></tr>`).join("")}</tbody></table>`);
 }
 
 function renderCustomer(c) {
-  const risk = c.risk, rating = risk ? risk.rating : null;
-  const reasons = risk ? risk.reasons.map(r => `<li>${esc(r.text)}${para(r.paragraph)}</li>`).join("") : "";
-  const changed = c.thresholds.confidence !== 0.7;
-  const rows = c.transactions.map(t => {
-    const d = t.decision, alert = c.alerts.some(a => a.transaction_id === t.transaction_id);
-    const pending = state.reviews.some(r => r.case_id.endsWith(t.transaction_id));
-    const dec = d ? `<span class="d-${esc(d.final_decision)}">${esc(d.final_decision)}</span> <span class="by">${esc(d.decided_by)}${d.risk_score !== undefined ? " · score " + esc(d.risk_score) : ""}</span>`
-                  : pending ? `<span class="d-pending">with reviewer</span>` : `<span class="by">not scored</span>`;
-    return `<tr><td>${esc(t.transaction_id)}</td><td>${esc(t.timestamp.replace("T", " "))}</td><td>${esc(t.merchant)} <span class="by">${esc(t.category)}, ${esc(t.country)}</span></td>
-      <td class="num">${Number(t.amount).toLocaleString()} ${esc(t.currency)}</td><td>${dec}${alert ? '<span class="alert-dot" title="alert"></span>' : ""}</td></tr>`;
-  }).join("");
+  if (!c) return '<div class="panel empty">Pick a customer to see their file.</div>';
+  const risk = c.risk, busy = !!state.status.running, off = !c.runnable;
   return `<div class="panel cust">
-    <div class="cust-head"><span class="name">${esc(risk?.name || c.customer_id)}</span>
-      <span class="meta">${esc(c.customer_id)} · card ${esc(c.user_id)}</span><span class="spacer"></span>
-      ${risk?.previous && risk.previous.rating !== rating ? `<span class="meta">was <b>${esc(risk.previous.rating.toUpperCase())}</b> under ${esc(risk.previous.policy)} →</span>` : ""}
-      <span class="rating r-${rating || "none"}">${rating ? rating.toUpperCase() : "NOT RATED"}</span></div>
-    ${risk ? `<div class="meta">Rated under <b>${esc(risk.policy)}</b> · ${esc(risk.status.replace("_", " "))}</div><ul class="reasons">${reasons}</ul>` : ""}
-    ${c.refresh ? `<div class="flag">KYC refresh triggered by transaction alerts ${para(state.policy.citations.alerts_for_kyc_refresh)}</div>` : ""}
-    <div class="thresholds">
-      <div class="th ${changed ? "changed" : ""}">Human review below confidence <b>${c.thresholds.confidence}</b></div>
-      <div class="th ${changed ? "changed" : ""}">Grey zone <b>${c.thresholds.grey_zone[0]}–${c.thresholds.grey_zone[1] - 1}</b></div>
-    </div>
-    <table><thead><tr><th>ID</th><th>When</th><th>Merchant</th><th class="num">Amount</th><th>Decision</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="cust-head"><span class="name">${esc(c.name || c.customer_id)}</span><span class="meta">${esc(c.customer_id)}${c.user_id ? " · card " + esc(c.user_id) : " · no card account"}</span><span class="spacer"></span>
+      ${risk?.previous && risk.previous.rating !== risk.rating ? `<span class="meta">was <b>${esc(risk.previous.rating.toUpperCase())}</b> under ${esc(risk.previous.policy)} →</span>` : ""}
+      <span class="rating r-${risk ? esc(risk.rating) : "none"}">${risk ? esc(risk.rating.toUpperCase()) : "NOT SCREENED"}</span></div>
+    ${risk ? `<div class="meta">Rated under <b>${esc(risk.policy)}</b> · <span class="st-${esc(risk.status)}">${esc(words(risk.status))}</span>${c.onboarded ? " · onboarded" : ""}</div>
+      <ul class="reasons">${risk.reasons.map(r => `<li>${esc(r.text)}${para(r.paragraph)}</li>`).join("")}</ul>` : '<div class="meta">New application, not screened yet.</div>'}
+    <div class="acts"><button class="act" ${busy || off ? "disabled" : ""} title="${off ? "Offline rehearsal covers the scripted clients only" : ""}" onclick="post('/api/client/${esc(c.customer_id)}/onboard')">${risk ? "Screen again under the live policy" : "Screen this application"}</button></div>
+    ${c.client ? `<div class="hist-title">Client file · assessed under ${esc(c.client.assessed_policy || "nothing yet")} · stage ${esc(words(c.client.stage))}</div>
+      <ul class="hist" style="max-height:300px">${c.client.history.map(e => `<li class="${e.pillar === "lifecycle" ? "life" : ""}">${esc(e.what)}${para(e.paragraph)}</li>`).join("")}</ul>` : ""}
   </div>`;
 }
 
-function renderReview(r) {
-  const q = r.question || {};
-  const bullets = [...(q.risk_reasons || []), ...(q.why_review || []),
-                   ...(q.changes || []).map(c => `${fieldNames[c.field] || c.field}: ${fmt(c.before)} → ${fmt(c.after)} (¶ ${c.paragraph})`)];
-  const yes = r.pillar === "reg" || r.pillar === "kyc" ? "approve" : "approve";
-  const no = r.pillar === "tm" ? "block" : "reject";
-  return `<div class="review"><span class="pill p-${esc(r.pillar)}">${esc(r.pillar.toUpperCase())}</span><span class="meta">${esc(r.case_id)}</span>
-    <div class="q">${esc(q.question || "Decision needed")}${q.customer ? " — " + esc(q.customer) : ""}${q.transaction_id ? " — " + esc(q.transaction_id) : ""}</div>
-    ${q.reason ? `<div class="meta">Agent: ${esc(q.agent_decision)} (score ${esc(q.risk_score)}, confidence ${esc(q.confidence)}). ${esc(q.reason)}</div>` : ""}
-    <ul>${bullets.map(b => `<li>${esc(b)}</li>`).join("")}</ul>
-    <input id="note-${esc(r.case_id)}" placeholder="Reviewer note (optional)">
-    <div class="btns"><button class="btn ok" onclick="answer('${esc(r.case_id)}','${yes}')">Approve</button>
-    <button class="btn no" onclick="answer('${esc(r.case_id)}','${no}')">${no === "block" ? "Block" : "Reject"}</button></div></div>`;
+function renderCard(c) {
+  const changed = c.thresholds.confidence !== 0.7, busy = !!state.status.running;
+  const rows = c.transactions.map(t => {
+    const d = t.decision, alert = c.alerts.some(a => a.transaction_id === t.transaction_id);
+    const pending = state.actions.some(a => a.id.endsWith(t.transaction_id));
+    const dec = d ? `<span class="d-${esc(d.final_decision)}">${esc(d.final_decision)}</span> <span class="by">${esc(d.decided_by)}${d.risk_score !== undefined ? " · score " + esc(d.risk_score) : ""}</span>`
+                  : pending ? `<span class="d-pending">with reviewer</span>` : `<span class="by">not scored</span>`;
+    const lab = t.analyst ? `<span class="${d ? (d.final_decision === t.analyst.decision ? "match" : "miss") : "by"}">${esc(t.analyst.decision)}</span> <span class="by">score ${esc(t.analyst.risk_score)}</span>` : "";
+    return `<tr><td>${esc(t.transaction_id)}</td><td>${esc(t.timestamp.replace("T", " "))}</td><td>${esc(t.merchant)} <span class="by">${esc(t.category)}, ${esc(t.country)}</span></td>
+      <td class="num">${Number(t.amount).toLocaleString()} ${esc(t.currency)}</td><td>${dec}${alert ? '<span class="alert-dot" title="alert"></span>' : ""}</td><td>${lab}</td></tr>`;
+  }).join("");
+  const why = !c.onboarded ? "Not onboarded yet: screen and approve them in KYC first" : c.tm_waiting ? "A payment is waiting in the action queue" : "";
+  return `<div class="panel cust" style="margin-top:16px">
+    <div class="cust-head"><span class="name"><a href="#" onclick="pick('${esc(c.customer_id)}');return false">${esc(c.name)}</a></span><span class="meta">${esc(c.customer_id)} · card ${esc(c.user_id)}</span>
+      <span class="rating r-${c.risk ? esc(c.risk.rating) : "none"}">${c.risk ? "KYC " + esc(c.risk.rating.toUpperCase()) : "NOT ONBOARDED"}</span><span class="spacer"></span>
+      <button class="act ${c.monitor_due ? "next" : ""}" ${busy || why || !c.runnable ? "disabled" : ""} title="${esc(why)}" onclick="post('/api/client/${esc(c.customer_id)}/monitor')">Monitor payments</button></div>
+    ${c.refresh ? `<div class="flag">KYC refresh triggered by transaction alerts ${para(state.policy.citations.alerts_for_kyc_refresh)}</div>` : ""}
+    <div class="thresholds"><div class="th ${changed ? "changed" : ""}">Human review below confidence <b>${c.thresholds.confidence}</b></div>
+      <div class="th ${changed ? "changed" : ""}">Grey zone <b>${c.thresholds.grey_zone[0]}–${c.thresholds.grey_zone[1] - 1}</b></div>
+      ${c.monitor_due ? '<div class="th changed">Rating or policy changed since the last run: monitoring due</div>' : ""}</div>
+    <table><thead><tr><th>ID</th><th>When</th><th>Merchant</th><th class="num">Amount</th><th>Decision</th><th>Analyst label</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+const listTable = rows => rows.length ? `<table><thead><tr>${Object.keys(rows[0]).map(k => `<th>${esc(words(k))}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${Object.values(r).map(v => `<td>${esc(fmt(v))}</td>`).join("")}</tr>`).join("")}</tbody></table>` : "";
+
 async function poll() {
-  const r = await fetch(`/api/state?after=${lastSeq}`);
-  state = await r.json();
+  if (!ref) {
+    ref = await (await fetch("/api/reference")).json();
+    $("#pep").innerHTML = listTable(ref.pep_list); $("#sanctions").innerHTML = listTable(ref.sanctions_list);
+    const f = ref.firm;
+    $("#firm").innerHTML = `<div><b>${esc(f.name)}</b> <span class="meta">${esc(f.firm_id)} · ${esc(f.type)} · ${Number(f.customers).toLocaleString()} customers · ${esc(f.total_assets)}</span></div>
+      <div class="meta" style="margin:4px 0 8px">${esc(f.notes || "")}</div><div class="hist-title">Contracted providers</div>${listTable(f.providers.map(p => ({provider: p.name, service: p.service, contract_end: p.contract_end, material: p.material})))}`;
+  }
+  state = await (await fetch(`/api/state?after=${lastSeq}&customer=${encodeURIComponent(selected)}`)).json();
+  const busy = !!state.status.running, k = state.kpis;
   $("#mode").textContent = state.offline ? "OFFLINE REHEARSAL (scripted model)" : "LIVE MODELS";
   $("#mode").className = "badge " + (state.offline ? "offline" : "live");
-  $("#status").textContent = state.status.running ? `Running: ${state.status.running}…` : "";
-  $("#err").textContent = state.status.error || "";
-  document.querySelectorAll(".step").forEach(b => b.disabled = !!state.status.running);
+  $("#status").textContent = busy ? `Running: ${state.status.running}…` : "";
+  if (state.status.error) $("#err").textContent = state.status.error;
   if (state.langsmith_project) $("#ls").textContent = `LangSmith: ${state.langsmith_project}`;
+  $("#scan").disabled = $("#brief").disabled = busy;
+  $("#n-dash").hidden = !state.actions.length; $("#n-dash").textContent = state.actions.length;
 
-  $("#customers").innerHTML = state.customers.map(renderCustomer).join("");
-  $("#reviews").innerHTML = state.reviews.length ? state.reviews.map(renderReview).join("") : "Nothing waiting for a human.";
-  $("#reviews").className = state.reviews.length ? "" : "empty";
+  const tile = (n, label, to, hot) => `<div class="kpi ${hot && n ? "hot" : ""}" onclick="show('${to}')"><b>${n}</b><span>${label}</span></div>`;
+  paint("#kpis", JSON.stringify([k, state.policy.source_document]), tile(k.awaiting_decision, "Actions waiting for you", "dash", true) + tile(k.new_applications, "New applications to screen", "kyc", true)
+    + tile(k.onboarded, "Onboarded clients", "kyc") + tile(k.refresh_or_reassess, "Refresh or re-assessment due", "dash", true)
+    + tile(k.payments_for_review, "Payments for review", "tm", true) + tile(k.monitoring_due, "Clients due monitoring", "tm", true)
+    + `<div class="kpi" onclick="show('reg')"><b style="font-size:18px;line-height:1.6">${esc(state.policy.source_document)}</b><span>Live policy</span></div>`);
+  paint("#actions", JSON.stringify(state.actions), state.actions.length ? state.actions.map(renderAction).join("") : '<div class="empty">Nothing waiting. Press Scan to look for new work.</div>');
 
-  const ch = state.policy_changes;
-  $("#policy").className = ch.length ? "" : "empty";
-  $("#policy").innerHTML = ch.length ? `<div class="meta">From <b>${esc(state.policy.source_document)}</b></div>
-    <table class="changes"><tbody>${ch.map(c => `<tr><td>${esc(fieldNames[c.field] || c.field)}${para(c.paragraph)}</td><td class="after">${esc(fmt(c.after))}</td></tr>`).join("")}</tbody></table>`
-    : "Baseline: the repo's default controls.";
+  renderRegister();
+  paint("#customer", JSON.stringify([state.customer, busy]), renderCustomer(state.customer));
+  paint("#tm", JSON.stringify([state.card_clients, busy, state.actions.map(a => a.id)]), state.card_clients.map(renderCard).join(""));
+
+  if (paint("#doc", JSON.stringify(state.documents), state.documents.map(d => `<option>${esc(d)}</option>`).join(""))) $("#doc").value = state.documents.includes("PS26-7") ? "PS26-7" : state.documents[0];
+  paint("#briefText", JSON.stringify(state.brief), state.brief ? `<div class="meta" style="margin-bottom:6px">${esc(state.brief.document)}, written by the regulatory agent</div><pre class="brief">${esc(state.brief.text)}</pre>` : '<span class="empty">No document briefed yet.</span>');
+  const ch = state.policy_changes, waiting = state.actions.find(a => a.pillar === "reg");
+  paint("#policy", JSON.stringify([ch, waiting]), (waiting ? `<div class="flag" style="margin-bottom:8px">A policy change is waiting for approval on the Dashboard: ${esc(waiting.subject)}</div>` : "")
+    + (ch.length ? `<div class="meta">Live, from <b>${esc(state.policy.source_document)}</b>. These change how KYC rates clients and how payments are monitored.</div>
+      <table class="changes"><tbody>${ch.map(c => `<tr><td>${esc(fieldNames[c.field] || c.field)}${para(c.paragraph)}</td><td class="after">${esc(fmt(c.after))}</td></tr>`).join("")}</tbody></table>`
+      : '<span class="empty">Baseline: the default controls. No regulatory change is live.</span>'));
+  paint("#affected", JSON.stringify(state.affected), state.affected.length ? `<div class="meta">Last assessed under an older policy. Each has a re-assessment action on the Dashboard.</div>` + listTable(state.affected.map(a => ({client: `${a.name} (${a.customer_id})`, rating: a.rating, assessed_under: a.policy})))
+    : '<span class="empty">No client is out of date with the live policy.</span>');
+
+  const chatBusy = state.status.running === "supervisor chat";
+  $("#q").disabled = $("#send").disabled = busy || state.offline;
+  if (state.offline) $("#q").placeholder = "Switched off in offline rehearsal (needs live models)";
+  if (state.chat.length && paint("#chat", JSON.stringify(state.chat) + chatBusy, state.chat.map(m => `<div class="msg ${esc(m.role)}">${
+      m.skills.map(s => `<span class="chip skill">skill: ${esc(s)}</span>`).join("")}${m.tools.map(t => `<span class="chip">${esc(t)}</span>`).join("")}${
+      m.skills.length || m.tools.length ? "<br>" : ""}${esc(m.text)}</div>`).join("") + (chatBusy ? '<div class="msg agent empty">Working…</div>' : "")))
+    $("#chat").scrollTop = $("#chat").scrollHeight;
 
   for (const e of state.events) {
     lastSeq = Math.max(lastSeq, e.seq);
@@ -219,7 +349,7 @@ async function poll() {
     $("#feed").prepend(div);
   }
 }
-poll(); setInterval(poll, 1200);
+show(tab); poll(); setInterval(poll, 1200);
 </script>
 </body>
 </html>

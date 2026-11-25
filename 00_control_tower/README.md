@@ -8,7 +8,7 @@ Regulatory change (03, deep agent + sub-agents) --writes policy--+
 KYC onboarding    (01, LangGraph)              --writes rating--+--> shared LangGraph Store
 Txn monitoring    (02, agent + memory + HITL)  <--reads rating--+     (policy, customer_risk, alerts,
                                                --flags refresh--+      kyc_refresh, reviews, events)
-Supervisor deep agent: regulatory-analyst sub-agent + tools for KYC, TM, refresh and reviews
+Supervisor deep agent: five lifecycle skills + tools for regulatory, KYC, TM, refresh and reviews
 ```
 
 The pillars never call each other. Each one still runs on its own from its own folder, so Nam, Marcus and

@@ -51,15 +51,17 @@ def main(offline: bool) -> dict:
     answer_review(store, proposal["case_id"], {"decision": "approve", "notes": "Checked against PS26-7."})
 
     # 3. After PS26-7
-    for item in store.search(("alerts", USER), limit=100):  # count alerts under the new policy only
-        store.delete(("alerts", USER), item.key)
+    tm.start_replay(store, USER)  # replay the same transactions under the new policy, like for like
     after = kyc.run_kyc(CUSTOMER, store, reg.active_policy(store))
     show("KYC after PS26-7", {k: after[k] for k in ("rating", "status", "reasons")})
     tm_after = tm.run_tm(USER, store, reg.active_policy(store), reviewer_answers=answers, run_tag="after")
     show("TM after PS26-7", [(d["transaction_id"], d["final_decision"], d["decided_by"]) for d in tm_after])
     show("KYC refresh flags", memory.open_refresh_flags(store))
     show("Open reviews", [r["case_id"] for r in memory.reviews(store)])
-    return {"before": before, "after": after, "tm_before": tm_before, "tm_after": tm_after,
+    client = memory.get_client(store, CUSTOMER)
+    show(f"Client file for {CUSTOMER}: stage {client['stage']}",
+         [f"{h['what']}" + (f" (para {h['paragraph']})" if h["paragraph"] else "") for h in client["history"]])
+    return {"client": client, "before": before, "after": after, "tm_before": tm_before, "tm_after": tm_after,
             "flags": memory.open_refresh_flags(store), "reviews": memory.reviews(store)}
 
 

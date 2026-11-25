@@ -9,6 +9,8 @@ answer for PS26-7, used as the gold label in the policy-extraction eval.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
 
@@ -50,6 +52,20 @@ class PolicyParams(BaseModel):
 
 BASELINE = PolicyParams()
 
+_CITABLE = tuple(n for n in PolicyParams.model_fields if n not in ("citations", "source_document"))
+
+
+class Citation(BaseModel):
+    field: Literal[*_CITABLE] = Field(description="The PolicyParams field this citation supports")
+    paragraph: str = Field(description="Paragraph number(s) only, e.g. '4.1' or '4.1, 4.3'")
+
+
+class PolicyExtraction(PolicyParams):
+    """What the model is asked for. Same fields as PolicyParams, but citations are a list: OpenAI's strict JSON
+    schema rejects free-form dictionaries, so `extract_policy` turns the list back into the dictionary."""
+
+    citations: list[Citation] = Field(description="One entry per field you set, with the paragraph it comes from")
+
 PS26_7_REFERENCE = PolicyParams(
     source_document="PS26-7",
     edd_for_peps=True,
@@ -77,19 +93,39 @@ PS26_7_REFERENCE = PolicyParams(
 )
 
 EXTRACTION_PROMPT = """You turn a regulatory brief into machine-readable controls for a bank's KYC and
-transaction-monitoring agents. Fill in every field the brief supports, and cite the paragraph for each one in
-`citations`. Leave a field at its default when the brief does not mention it; never guess.
+transaction-monitoring agents. Fill in every field the regulation supports, and cite the paragraph for each one in
+`citations`. Leave a field at its default when the regulation does not mention it; never guess.
 Merchant categories must use these codes where they apply: crypto, gift_cards, gambling, jewellery, luxury_goods.
+
+Citations must be paragraph numbers of {document_id} itself, such as "4.1" or "6.3": numbers only, comma-separated
+when a field relies on more than one paragraph. Cite every paragraph a field relies on: the one that sets the rule
+and any paragraph that defines or lists what it applies to. Add a citation for every field the regulation sets,
+including one whose required value equals the default. Never cite the brief's own headings or section numbers.
 
 Brief for {document_id}:
 {brief}"""
 
+SOURCE_PROMPT = """
 
-def extract_policy(brief: str, document_id: str, model: str) -> PolicyParams:
-    """Ask the model to turn the regulatory pillar's brief (or the raw document) into PolicyParams."""
-    extractor = init_chat_model(model).with_structured_output(PolicyParams, method="json_schema")
-    params = extractor.invoke(EXTRACTION_PROMPT.format(document_id=document_id, brief=brief))
-    return params.model_copy(update={"source_document": document_id})
+Full text of {document_id}. The brief tells you what matters to the firm; this text is the authority for every
+value and every paragraph number:
+{source_text}"""
+
+
+def extract_policy(brief: str, document_id: str, model: str, source_text: str = "") -> PolicyParams:
+    """Ask the model to turn the regulatory pillar's brief into PolicyParams.
+
+    A brief is written for people and uses its own headings, so it often drops the regulation's paragraph numbers.
+    Pass the regulation's text as `source_text` so values and citations are checked against the original.
+    """
+    extractor = init_chat_model(model).with_structured_output(PolicyExtraction, method="json_schema")
+    prompt = EXTRACTION_PROMPT.format(document_id=document_id, brief=brief)
+    if source_text:
+        prompt += SOURCE_PROMPT.format(document_id=document_id, source_text=source_text)
+    raw = extractor.invoke(prompt).model_dump()
+    if isinstance(raw["citations"], list):
+        raw["citations"] = {c["field"]: c["paragraph"] for c in raw["citations"]}
+    return PolicyParams(**{**raw, "source_document": document_id})
 
 
 def diff(old: PolicyParams, new: PolicyParams) -> list[dict]:
