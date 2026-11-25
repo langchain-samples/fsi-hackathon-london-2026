@@ -40,7 +40,13 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for full architecture diagrams, port co
 
 ## Quick Start
 
-From the repository root:
+From the repository root, launch the entire stack (uv sync, FCA Handbook download/ingestion with interactive `.env.fca` token prompt if missing, both MCP servers, Compliance Agent HTTP API, and ReguLens Agent UI):
+
+```bash
+make run
+```
+
+Or run the tests directly:
 
 ```bash
 uv sync --all-packages

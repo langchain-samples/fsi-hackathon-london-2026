@@ -321,6 +321,8 @@ class LocalMockGitHubClient:
         repo_files: dict[str, str] | None = None,
         pr_meta: dict[str, Any] | None = None,
         pr_diff: str = "",
+        org_repos: list[dict[str, Any]] | None = None,
+        repo_prs: dict[str, list[dict[str, Any]]] | None = None,
         fail_on_create: str | None = None,
         fail_on_comment: str | None = None,
         report_to_stdout: bool = True,
@@ -329,6 +331,8 @@ class LocalMockGitHubClient:
         self.repo_files = dict(repo_files or {})
         self.pr_meta = dict(pr_meta or {})
         self.pr_diff = pr_diff
+        self.org_repos = list(org_repos or [])
+        self.repo_prs = dict(repo_prs or {})
         self.fail_on_create = fail_on_create
         self.fail_on_comment = fail_on_comment
         self.report_to_stdout = report_to_stdout
@@ -491,6 +495,21 @@ class LocalMockGitHubClient:
             f"[MockGitHubAPI] Posted PR comment {comment_url} | saved -> {md_path}"
         )
         return comment_url
+
+    def list_org_repos(self, org: str, *, limit: int = 50) -> list[dict[str, Any]]:
+        return list(self.org_repos)[:limit]
+
+    def list_repo_prs(
+        self,
+        repo_slug: str,
+        *,
+        state: str = "open",
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        prs = list(self.repo_prs.get(repo_slug, []))
+        if state != "all":
+            prs = [pr for pr in prs if str(pr.get("state", "OPEN")).lower() == state.lower()]
+        return prs[:limit]
 
     def format_summary(self) -> str:
         lines = [
