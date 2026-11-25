@@ -15,6 +15,7 @@ from ..domain.models import (
 from ..domain.state import UnitAnalysisState
 from ..ports.regulatory import FCAHandbookResearchPort
 from ..ports.reviewer import ComplianceReviewerPort
+from .nodes import _norm_ref
 
 SAMPLE_NOTE = "WARNING: this review used sample or mock rules, not real FCA Handbook text."
 _TRUNCATED = "[truncated]"
@@ -27,7 +28,7 @@ def _normalise(text: str) -> str:
 
 
 def _same_reference(a: str, b: str) -> bool:
-    return "".join(a.upper().split()) == "".join(b.upper().split())
+    return "".join(_norm_ref(a).split()) == "".join(_norm_ref(b).split())
 
 
 def is_sample(passage: RegulatoryPassage) -> bool:
@@ -49,16 +50,36 @@ def check_against_passages(
     return CitationCheck(ok=True, fictional=any(is_sample(p) for p in matches))
 
 
+def _read_passage(citation: RegulatoryCitation, review: UnitReview) -> RegulatoryPassage | None:
+    """The text the agent read for a citation. UK GDPR is served by the FCA port, and cited beside it."""
+    statute = citation.source == "consumer_credit_act"
+    for passage in review.sections_read:
+        if (passage.source == "consumer_credit_act") == statute and _same_reference(
+            passage.reference, citation.reference
+        ):
+            return passage
+    return None
+
+
+def _canonical(citation: RegulatoryCitation, review: UnitReview) -> RegulatoryCitation:
+    passage = _read_passage(citation, review)
+    if passage is None:
+        return citation
+    return citation.model_copy(
+        update={"source": passage.source, "reference": passage.reference, "url": passage.url}
+    )
+
+
 async def _check_fca(
     citation: RegulatoryCitation, review: UnitReview, fca_port: FCAHandbookResearchPort
 ) -> CitationCheck:
-    read = [p for p in review.sections_read if p.source == "fca_handbook"]
-    if not any(_same_reference(p.reference, citation.reference) for p in read):
+    passage = _read_passage(citation, review)
+    if passage is None:
         return CitationCheck(
             ok=False, problems=[f"{citation.reference} was cited without reading its section"]
         )
     try:
-        return await fca_port.check_citation(citation.reference, citation.excerpt)
+        return await fca_port.check_citation(passage.reference, citation.excerpt)
     except Exception as error:  # any failure means unverified, never verified
         return CitationCheck(ok=False, problems=[f"{citation.reference} could not be checked: {error}"])
 
@@ -75,7 +96,7 @@ async def check_finding(
         check = await _check_fca(citation, review, fca_port)
         problems += check.problems
         if check.ok:
-            fca.append(citation)
+            fca.append(_canonical(citation, review))
             binding = binding or check.binding is True
             fictional = fictional or check.fictional
     read_cca = [p for p in review.sections_read if p.source == "consumer_credit_act"]
@@ -83,7 +104,7 @@ async def check_finding(
         check = check_against_passages(citation.reference, citation.excerpt, read_cca)
         problems += check.problems
         if check.ok:
-            cca.append(citation)
+            cca.append(_canonical(citation, review))
             binding = True
             fictional = fictional or check.fictional
 

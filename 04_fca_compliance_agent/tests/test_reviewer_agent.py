@@ -153,6 +153,42 @@ class ReviewerAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.overall_verdict, "non_compliant")
         self.assertEqual([c.reference for c in report.findings[0].cca_citations], [CCA_REF])
 
+    async def test_uk_gdpr_citation_is_kept(self) -> None:
+        reference = "UK GDPR Art 5(1)(c)"
+        report, _ = await review(
+            step(call("get_fca_section", reference=reference)),
+            answer("issues_found", finding(cite(reference, "adequate, relevant and limited to what is necessary", "uk_gdpr"))),
+        )
+        self.assertEqual(report.overall_verdict, "non_compliant")
+        (citation,) = report.findings[0].fca_citations
+        self.assertEqual((citation.source, citation.reference), ("uk_gdpr", reference))
+        self.assertIn("legislation.gov.uk", citation.url)
+
+    async def test_reference_is_canonicalised(self) -> None:
+        report, _ = await review(
+            step(call("get_consumer_credit_act_document", section="66A")),
+            answer("issues_found", finding(cite("cca 1974 s.66A (withdrawal)", CCA_QUOTE, "consumer_credit_act"))),
+        )
+        (citation,) = report.findings[0].cca_citations
+        self.assertEqual(citation.reference, CCA_REF)
+        self.assertTrue(citation.url.endswith("/66A"))
+
+    async def test_embedded_instructions_finding_needs_a_person(self) -> None:
+        draft = finding(title="Embedded instructions aimed at the reviewer", status="needs_review", severity="info")
+        report, _ = await review(READ, answer("issues_found", draft))
+        self.assertEqual(report.overall_verdict, "requires_manual_review")
+
+    async def test_the_act_is_not_expected_in_the_handbook_index(self) -> None:
+        class NoAct(MockFCAHandbookAdapter):
+            async def search(self, *args: Any, **kwargs: Any) -> RegulatorySearch:
+                return RegulatorySearch(not_in_index=["CONSUMER CREDIT ACT 1974"])
+
+        report, _ = await review(
+            step(call("search_fca_handbook", query="x", sourcebooks=["Consumer Credit Act 1974"])), READ,
+            answer("no_issue"), fca=NoAct(), scope=["Consumer Credit Act 1974"],
+        )  # fmt: skip
+        self.assertEqual(report.overall_verdict, "compliant")
+
     # The agent never marks its own work ---------------------------------------------------------
 
     async def test_made_up_quote_is_removed(self) -> None:

@@ -77,7 +77,8 @@ class _Run:
     ) -> None:
         self._fca = fca_port
         self._cca = cca_port
-        self._scope = {s.upper() for s in regulatory_scope}
+        # The Act has its own tools, so the Handbook index is not expected to hold it.
+        self._scope = {s.upper() for s in regulatory_scope if "CREDIT ACT" not in s.upper()}
         self._limit = max_tool_calls
         self._used = 0
         self.read: list[RegulatoryPassage] = []
@@ -163,7 +164,7 @@ class _Run:
         """Check that a quote is word for word in a provision. Use it before you finish, and fix any that fail."""
 
         async def work() -> dict[str, Any]:
-            if source == "fca_handbook":
+            if source != "consumer_credit_act":
                 return (await self._fca.check_citation(reference, quote)).model_dump()
             read = [p for p in self.read if p.source == source]
             return check_against_passages(reference, quote, read).model_dump()
@@ -281,7 +282,7 @@ def _finding(unit: AnalysisUnit, draft: _DraftReviewFinding) -> Finding:
         severity=draft.severity,
         status=draft.status,
         evidence_excerpt=draft.evidence_excerpt,
-        fca_citations=[c for c in citations if c.source == "fca_handbook"],
+        fca_citations=[c for c in citations if c.source != "consumer_credit_act"],
         cca_citations=[c for c in citations if c.source == "consumer_credit_act"],
         fca_vs_cca_comparison=draft.fca_vs_cca_comparison,
         remediation_guidance=draft.remediation_guidance,

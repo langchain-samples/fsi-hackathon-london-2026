@@ -292,7 +292,7 @@ class MockFCAHandbookAdapter:
         return CitationCheck(
             ok=ok,
             problems=[] if ok else [f"the quote is not word for word in {reference}"],
-            binding=rule.reference.endswith("R"),
+            binding=rule.source == "uk_gdpr" or rule.reference.endswith("R"),
             fictional=True,
         )
 
