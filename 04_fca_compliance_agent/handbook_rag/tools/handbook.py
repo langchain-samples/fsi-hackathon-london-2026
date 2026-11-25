@@ -1,110 +1,160 @@
-"""Tools that let an agent search the FCA Handbook index."""
+"""The Handbook tools: search widely, then read the whole section, then check the quote.
+
+Failures raise, and never come back as text, so that an error cannot be mistaken for a rule.
+"""
 
 from datetime import date
+from typing import Any
 
-from langchain.tools import tool
+from utils import store, verification
+from utils.references import parse_reference, section_of
 
-from utils import store
-from utils.references import parse_reference
-
-NO_MATCHES = "No provisions matched."
-
-_FIELDS = (
-    "citation", "provision_type", "heading_path", "text", "effective_from", "effective_to", "url", "snapshot_date",
-    "source", "attribution",
-)  # fmt: skip
-
-
-def _public(payload: dict) -> dict:
-    return {field: payload[field] for field in _FIELDS}
+SNIPPET = 300
+SECTION_LIMIT = 12_000  # characters, about 3,000 tokens
 
 
 def _date(as_of: str | None) -> date:
     return date.fromisoformat(as_of) if as_of else date.today()
 
 
-@tool(parse_docstring=True)
-def search_handbook(
-    query: str,
-    sourcebooks: list[str] | None = None,
-    provision_types: list[str] | None = None,
-    as_of: str | None = None,
-    limit: int = 8,
-) -> list[dict] | str:
-    """Search the FCA Handbook by meaning and by exact words. Returns the provisions in force, best match first.
+def _describe(row: dict, text: str) -> dict[str, Any]:
+    return {
+        "reference": row["citation"],
+        "title": " > ".join([*row["heading_path"], *([row["subheading"]] if row["subheading"] else [])]),
+        "text": text,
+        "provision_type": row["provision_type"],
+        "binding": row["provision_type"] in store.BINDING,
+        "section": row["section"],
+        "effective_from": row["effective_from"],
+        "effective_to": row["effective_to"],
+        "url": row["url"],
+        "snapshot_date": row["snapshot_date"],
+        "source": row["source"],
+    }
 
-    Results are candidates, not findings: read the whole provision with get_provision before relying on one. A long
-    provision may be shown in part.
+
+def _scope(sourcebooks: list[str] | None) -> tuple[list[str], list[str]]:
+    """Split the requested scope into what the index has and what it lacks. "PRIN 2A" means just that chapter."""
+    wanted = [" ".join(s.upper().split()) for s in sourcebooks or [] if s.strip()]
+    if not wanted:
+        return [], []
+    available = store.scopes()
+    return [s for s in wanted if s in available], [s for s in wanted if s not in available]
+
+
+def search_fca_handbook(
+    query: str, top_k: int = 8, sourcebooks: list[str] | None = None, as_of: str | None = None
+) -> dict[str, Any]:
+    """Find FCA Handbook provisions that might matter. Searches by meaning, exact words and rule reference.
+
+    Returns a short list: reference, heading, type and a snippet. These are candidates, not findings. Read the section
+    with get_fca_section before relying on one. An empty list does not mean that no rule applies.
 
     Args:
-        query: What to look for, for example "change management testing before deployment" or "SYSC 15A.2".
-        sourcebooks: Only these sourcebooks, for example ["SYSC", "PRIN"]. Leave out to search all of them.
-        provision_types: Only these types, for example ["R"]. R is a binding rule and G is guidance.
-        as_of: Search the rules in force on this date (YYYY-MM-DD). Leave out for today.
-        limit: How many provisions to return, from 1 to 20.
+        query: One topic in regulatory words, for example "testing changes before release", or a reference.
+        top_k: How many provisions to return, from 1 to 20.
+        sourcebooks: Only these sourcebooks or chapters, for example ["CONC", "PRIN 2A"]. Leave out to search all.
+        as_of: Use the rules in force on this date (YYYY-MM-DD). Leave out for today.
     """
-    try:
-        rows = store.search(query, _date(as_of), sourcebooks, provision_types, max(1, min(limit, 20)))
-    except (store.IndexNotReady, ValueError) as error:
-        return f"Error: {error}"
-    return [_public(row) for row in rows] or NO_MATCHES
+    day = _date(as_of)
+    scope, missing = _scope(sourcebooks)
+    rows = [] if missing and not scope else store.search(query, day, scope or None, max(1, min(top_k, 20)))
+    results = []
+    for row in rows:
+        text = " ".join(row["text"].split())
+        results.append(_describe(row, text if len(text) <= SNIPPET else text[:SNIPPET].rsplit(" ", 1)[0] + " [...]"))
+    return {"results": results, "not_in_index": missing}
 
 
-@tool(parse_docstring=True)
-def get_provision(reference: str, as_of: str | None = None) -> dict | str:
-    """Get the full text of one Handbook provision by its reference.
+def _size(rows: list[dict]) -> int:
+    return sum(len(r["text"]) for r in rows)
+
+
+def _around(rows: list[dict], anchor: int, limit: int) -> list[dict]:
+    """The anchor, and as many whole neighbours on each side as fit. A provision is never cut."""
+    low = high = anchor
+    while True:
+        grew = False
+        for step in (-1, 1):
+            new = low - 1 if step < 0 else high + 1
+            if 0 <= new < len(rows) and _size(rows[min(new, low) : max(new, high) + 1]) <= limit:
+                low, high, grew = min(new, low), max(new, high), True
+        if not grew:
+            return rows[low : high + 1]
+
+
+def _select(rows: list[dict], anchor: int, limit: int) -> tuple[list[dict], str]:
+    if _size(rows) <= limit:
+        return rows, "full"
+    if any(r["subheading"] for r in rows):
+        low = high = anchor  # the unbroken run of provisions under the anchor's sub-heading
+        while low > 0 and rows[low - 1]["subheading"] == rows[anchor]["subheading"]:
+            low -= 1
+        while high + 1 < len(rows) and rows[high + 1]["subheading"] == rows[anchor]["subheading"]:
+            high += 1
+        group = rows[low : high + 1]
+        if _size(group) <= limit:
+            return group, "group"
+        return _around(group, anchor - low, limit), "neighbours"
+    return _around(rows, anchor, limit), "neighbours"
+
+
+def get_fca_section(reference: str, as_of: str | None = None) -> dict[str, Any]:
+    """Read a whole FCA Handbook section: every rule and guidance paragraph, in order, so exceptions are not missed.
+
+    A section too long to return is cut down, around the provision you asked for, to the group under its sub-heading, or
+    to its neighbours. Then `complete` is false and `outline` lists what was left out: call again with a reference from
+    the outline to read it. Provisions are never cut part-way.
+
+    Args:
+        reference: A provision such as "SYSC 15A.2.1R", or a section such as "SYSC 15A.2".
+        as_of: Use the rules in force on this date (YYYY-MM-DD). Leave out for today.
+    """
+    parsed = parse_reference(reference)
+    if parsed is None:
+        raise ValueError(f"{reference!r} is not a Handbook reference")
+    day = _date(as_of)
+    row = store.get(reference, day)
+    section = row["section"] if row else section_of(parsed.key)
+    rows = store.get_section(section, day)
+    if not rows or (row is None and parsed.key != section):
+        raise ValueError(f"{reference} is not in force in the index. Do not cite it.{_suggest(parsed.key, day)}")
+    anchor = next((i for i, r in enumerate(rows) if row and r["citation"] == row["citation"]), 0)
+    chosen, mode = _select(rows, anchor, SECTION_LIMIT)
+    shown = {r["citation"] for r in chosen}
+    text = "\n".join(r["text"] for r in chosen)
+    return {
+        "section": section,
+        "complete": len(chosen) == len(rows),
+        "mode": mode,
+        "results": [_describe(r, r["text"]) for r in chosen],
+        "outline": [
+            f"{r['citation']}: {(r['subheading'] + ': ') if r['subheading'] else ''}{' '.join(r['text'].split())[:80]}"
+            for r in rows
+            if r["citation"] not in shown
+        ],
+        "definitions": store.definitions(text),
+        "links": [ref for ref in dict.fromkeys(x for r in chosen for x in r["cites"]) if ref not in shown][:20],
+    }
+
+
+def _suggest(key: str, day: date) -> str:
+    """A chapter such as "SYSC 15A" has no text of its own, so list its sections."""
+    options = store.sections(key, day)
+    return f" Sections in {key}: {', '.join(options)}." if options else ""
+
+
+def check_citation(reference: str, quote: str, as_of: str | None = None) -> dict[str, Any]:
+    """Check, without a model, that a provision is in force and that a quote from it is word for word.
+
+    Also says whether the provision is binding. Guidance (G) and evidential provisions (E) are not.
 
     Args:
         reference: The provision's reference, for example "SYSC 15A.2.1R".
-        as_of: Get the version in force on this date (YYYY-MM-DD). Leave out for today.
+        quote: The quoted words, at least four.
+        as_of: Use the rules in force on this date (YYYY-MM-DD). Leave out for today.
     """
-    try:
-        row = store.get(reference, _date(as_of))
-    except (store.IndexNotReady, ValueError) as error:
-        return f"Error: {error}"
-    return _public(row) if row else f"{reference} is not in force in the index. Do not cite it."
+    return verification.check_citation(reference, quote, _date(as_of))
 
 
-@tool(parse_docstring=True)
-def lookup_glossary(term: str) -> list[dict] | str:
-    """Look up a term the Handbook defines. Defined terms can mean something narrower than everyday English.
-
-    Args:
-        term: The defined term, for example "important business service".
-    """
-    try:
-        rows = store.glossary(term)
-    except store.IndexNotReady as error:
-        return f"Error: {error}"
-    return [{k: r[k] for k in ("term", "definition", "source")} for r in rows] or f"{term!r} is not a defined term."
-
-
-@tool(parse_docstring=True)
-def expand_references(reference: str, as_of: str | None = None) -> dict | str:
-    """Find the provisions a provision cites, with their text, and list the provisions that cite it.
-
-    Use it to find exceptions, conditions and guidance that sit apart from the rule itself.
-
-    Args:
-        reference: The provision's reference, for example "SYSC 15A.2.1R".
-        as_of: Use the versions in force on this date (YYYY-MM-DD). Leave out for today.
-    """
-    if parse_reference(reference) is None:
-        return f"{reference} is not a Handbook reference."
-    try:
-        day = _date(as_of)
-        row = store.get(reference, day)
-        if row is None:
-            return f"{reference} is not in force in the index. Do not cite it."
-        found = {ref: store.get(ref, day) for ref in row["cites"]}
-        return {
-            "citation": row["citation"],
-            "cites": list({p["citation"]: _public(p) for p in found.values() if p}.values()),
-            "cited_but_not_in_index": [ref for ref, p in found.items() if p is None],
-            "cited_by": store.cited_by(row["key"], day),
-        }
-    except (store.IndexNotReady, ValueError) as error:
-        return f"Error: {error}"
-
-
-HANDBOOK_TOOLS = [search_handbook, get_provision, lookup_glossary, expand_references]
+HANDBOOK_TOOLS = [search_fca_handbook, get_fca_section, check_citation]

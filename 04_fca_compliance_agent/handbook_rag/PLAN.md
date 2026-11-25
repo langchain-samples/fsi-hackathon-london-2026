@@ -11,8 +11,8 @@ sub-agent per section, checked quotes) but is a separate project. Written 25 Nov
 | FCA API downloader | **Blocked**: needs the API docs (behind sign-in) and a token |
 | Local embeddings (`bge-small-en-v1.5`) | Built and tested, offline too. 5 of 6 test queries find their rule in the top 3 of 12 fictional rules, so not yet evidence about real text |
 | Gateway embeddings | Not used. On 25 November 2026 the gateway refused `text-embedding-3-small` (403, policy "Workshop Model Access") |
-| MCP server over HTTP, and a client for the core agent | Built and tested, including parallel calls |
-| PR compliance agent | Not started |
+| MCP server over HTTP with three tools | Built and tested with the core agent's adapter, including parallel calls |
+| `fca_compliance_reviewer` agent | Built and tested with a scripted model. **Not yet run with a real LLM** |
 | Version check and refresh | Not started, see below |
 
 ## Decisions
@@ -24,7 +24,8 @@ sub-agent per section, checked quotes) but is a separate project. Written 25 Nov
 | How the agent uses the RAG | As MCP tools, over HTTP. It never opens Qdrant or the FCA API itself |
 | Embeddings | Local model, so any demo PC can run it. It must be the same model for indexing and searching |
 | Where the code lives | `04_fca_compliance_agent/handbook_rag`, run as a separate MCP server. Its packages are the `handbook-rag` extra |
-| Tools | **Open.** Suggested: `search_fca_handbook` and `check_citation`. The core agent cannot use the current six yet |
+| Tools | `search_fca_handbook`, `get_fca_section`, `check_citation` |
+| What is an agent | Only the FCA and CCA review of each change. Triage and the summary stay single LLM steps |
 | CONC (consumer credit) | **Open.** Suggested, because the core agent mostly cites it. The Consumer Credit Act itself is not in the Handbook |
 | Qdrant storage | On-disk folder (`.qdrant`) on the demo laptop. No Qdrant Cloud or server for now |
 
@@ -68,7 +69,7 @@ All the options, without running our own Qdrant server:
 
 - [ ] 20 or more real queries with known rules. The known miss is "shipped to production with no QA": it finds the
   guidance XSYS 4.1.2G, but not its rule XSYS 4.1.1R.
-- [ ] Try a separate search for rules (R), and following guidance to its rule with `expand_references`.
+- [x] Read the whole section, which recovers that rule (tested).
 - [ ] Have the agent turn developer wording into regulatory wording before it searches.
 
 ## Later: version-check node and pulling the latest version
@@ -91,7 +92,7 @@ A. Scheduled refresh, outside the agent (the only part that needs FCA credential
 
 B. Version-check node, at the start of the PR agent. It needs no FCA credentials.
 
-1. Call the `index_status` MCP tool for the snapshot date. It still needs the time of the last successful check.
+1. Read `snapshot_date` from any search result. It still needs the time of the last successful check.
 2. Fresh (under 48 hours): continue. Stale: continue with a warning. Over 7 days, or no index: stop for a person.
    These limits are suggestions, for the team to agree.
 3. Record the snapshot date and `as_of` date in the assessment, so it can be reproduced.
@@ -100,14 +101,10 @@ B. Version-check node, at the start of the PR agent. It needs no FCA credentials
 Open points: does the API offer a last-modified date, ETag or change list; what are the rate limits; does the server
 version of Qdrant become necessary (local mode allows one process, so a refresh cannot run while an agent is open).
 
-## Later: PR compliance agent
+## Next: the agent
 
-1. Load the PR (title, description, diff, linked issues). Treat all of it as untrusted text, never as instructions.
-2. Split it into changes, and skip ones with no regulatory relevance, such as formatting.
-3. One sub-agent per change searches the Handbook, reads full provisions, and checks definitions and exceptions.
-4. Each finding has a verdict (compliant, potential breach, unclear, not applicable), citation, word-for-word quote,
-   file and line. Guidance (G) alone can never be a breach.
-5. Plain code calls the `check_citation` MCP tool for every citation. A person reviews potential breaches and unclear results.
+- [ ] Run it with the real LLM on sample pull requests, and tune the prompt on what goes wrong.
+- [ ] 10 to 20 labelled PRs, with separate scores for retrieval and verdicts.
+- [ ] Give triage the whole change: it sees only the first 1,500 characters, and can drop a change.
 
 Most Handbook rules bind the firm, not a line of code, so output is evidence for a reviewer, not legal advice.
-Evaluation: 10 to 20 labelled PRs, with separate scores for retrieval and verdicts.

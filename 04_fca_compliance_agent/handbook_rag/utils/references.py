@@ -45,6 +45,14 @@ def parse_reference(text: str) -> Reference | None:
     return Reference(sourcebook, number, type_)
 
 
+def section_of(key: str) -> str:
+    """The section a key belongs to: "SYSC 15A.2.1" and "SYSC 15A.2" both give "SYSC 15A.2"."""
+    sourcebook, _, number = key.partition(" ")
+    if " ANNEX " in number:
+        return f"{sourcebook} {re.sub(r'(ANNEX [^.]+).*', chr(92) + '1', number)}"
+    return f"{sourcebook} {'.'.join(number.split('.')[:2])}"
+
+
 def ancestors(key: str) -> list[str]:
     """The key's parents: "SYSC 15A.2.1" gives ["SYSC 15A.2", "SYSC 15A"]."""
     sourcebook, _, number = key.partition(" ")

@@ -47,24 +47,16 @@ Start the server in its own terminal, and leave it running. It listens on this m
 uv run --no-sync python mcp_server.py
 ```
 
-The core agent gets its tools from `mcp_client.py`, a single file its project can copy. Set `HANDBOOK_MCP_URL` if the
-server is elsewhere.
+The core agent connects with `FCA_MCP_URL=http://127.0.0.1:8765/mcp` (see the [core README](../README.md)).
 
-```python
-from mcp_client import call_handbook, load_handbook_tools
+| Tool | Job | Returns |
+|------|-----|---------|
+| `search_fca_handbook` | Breadth: which rules might matter? | A short list: reference, heading, type and a snippet |
+| `get_fca_section` | Depth: what does the whole section say? | Every rule and guidance paragraph in order, definitions used, and links outside the section |
+| `check_citation` | Verification: is the quote real? | OK, or the problem, and whether the provision is binding |
 
-agent = create_deep_agent(model=..., tools=load_handbook_tools(), system_prompt=...)
-call_handbook("check_citation", {"reference": "SYSC 15A.2.1R", "quote": "..."})  # from plain code, no model
-```
-
-| Tool | What it does |
-|------|--------------|
-| `search_handbook` | Hybrid search, with filters for sourcebook, provision type and date |
-| `get_provision` | The full text of one provision in force on a date |
-| `lookup_glossary` | What a defined term means |
-| `expand_references` | What a provision cites, and what cites it |
-| `check_citation` | Whether a provision is in force and a quote from it is word for word. No model is involved |
-| `index_status` | Which snapshot is being searched, its date and its sourcebooks |
+A section over 12,000 characters is cut down, never mid-provision: to the group under the provision's sub-heading, or to
+its neighbours on each side. `complete` is then false and `outline` lists the rest. Failures are MCP errors, never text.
 
 ## Settings
 

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
-from utils.references import TYPES, find_references, parse_reference
+from utils.references import TYPES, find_references, parse_reference, section_of
 
 
 class Provision(BaseModel):
@@ -19,6 +19,7 @@ class Provision(BaseModel):
     ref: str = Field(description="For example 'SYSC 15A.2.1R'")
     provision_type: str = Field(description="R rule, G guidance, E evidential, UK, EU, D, P, C")
     heading_path: list[str] = Field(default_factory=list, description="Headings from sourcebook down to section")
+    subheading: str | None = Field(default=None, description="The heading within the section it sits under, if any")
     text: str = Field(min_length=1)
     effective_from: date | None = Field(default=None, description="First day in force; None if not given")
     effective_to: date | None = Field(default=None, description="Last day in force, inclusive; None if open-ended")
@@ -49,6 +50,14 @@ class Provision(BaseModel):
         return self.key.split(" ")[0]
 
     @property
+    def chapter(self) -> str:
+        return self.key.split(".")[0]
+
+    @property
+    def section(self) -> str:
+        return section_of(self.key)
+
+    @property
     def citation(self) -> str:
         return f"{self.key}{self.provision_type}"
 
@@ -56,12 +65,6 @@ class Provision(BaseModel):
     def cites(self) -> list[str]:
         """The references in the text, as written, for example ["SYSC 4.1.1R"]."""
         return [str(ref) for ref in find_references(self.text) if self.key not in ref.candidate_keys()]
-
-    @property
-    def cites_keys(self) -> list[str]:
-        """Every key those references could mean, for finding what cites a provision."""
-        keys = [key for ref in find_references(self.text) for key in ref.candidate_keys()]
-        return [key for key in dict.fromkeys(keys) if key != self.key]
 
 
 class GlossaryTerm(BaseModel):

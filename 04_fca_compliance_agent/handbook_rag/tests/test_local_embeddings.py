@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from tests.conftest import SAMPLE
-from tools.handbook import search_handbook
+from tools.handbook import get_fca_section, search_fca_handbook
 from utils import embeddings, store
 from utils.schema import Snapshot
 from utils.settings import get_settings
@@ -17,8 +17,8 @@ TODAY = "2026-11-25"
 LOCAL = "local:BAAI/bge-small-en-v1.5"
 
 
-def cites(rows):
-    return [r["citation"] for r in rows]
+def cites(found):
+    return [r["reference"] for r in found["results"]]
 
 
 @pytest.fixture
@@ -60,8 +60,8 @@ def test_a_missing_model_is_reported_not_downloaded(index, monkeypatch, tmp_path
     sample = store.client().scroll(index, limit=1)[0][0]
     store.client().set_payload(index, {"embedding_model": LOCAL}, points=[sample.id])
     monkeypatch.setenv("EMBEDDING_MODEL", LOCAL)
-    message = search_handbook.invoke({"query": "audit", "as_of": TODAY})
-    assert "python -m utils.embeddings" in message
+    with pytest.raises(embeddings.LocalModelNotReady, match="python -m utils.embeddings"):
+        search_fca_handbook("audit", as_of=TODAY)
     assert not any((tmp_path / "empty").rglob("*.onnx"))
 
 
@@ -80,19 +80,21 @@ def test_parallel_first_searches_load_the_model_once(local_index, monkeypatch):
     embeddings._cached_local_model.cache_clear()
     embeddings.get_embeddings.cache_clear()
     with ThreadPoolExecutor(8) as pool:
-        results = list(pool.map(lambda _: search_handbook.invoke({"query": "audit logs", "as_of": TODAY}), range(40)))
+        results = list(pool.map(lambda _: search_fca_handbook("audit logs", as_of=TODAY), range(40)))
     assert len(loads) == 1
     assert "XSYS 5.1.1R" in cites(results[0]) and all(cites(r) == cites(results[0]) for r in results)
 
 
 def test_an_index_built_with_another_model_is_refused(local_model, index, monkeypatch):
     monkeypatch.setenv("EMBEDDING_MODEL", LOCAL)
-    assert "built with hash" in search_handbook.invoke({"query": "audit", "as_of": TODAY})
+    with pytest.raises(store.IndexNotReady, match="built with hash"):
+        search_fca_handbook("audit", as_of=TODAY)
 
 
 def test_a_local_index_is_refused_by_another_model(local_index, monkeypatch):
     monkeypatch.setenv("EMBEDDING_MODEL", "hash")
-    assert f"built with {LOCAL}" in search_handbook.invoke({"query": "audit", "as_of": TODAY})
+    with pytest.raises(store.IndexNotReady, match=f"built with {LOCAL}"):
+        search_fca_handbook("audit", as_of=TODAY)
 
 
 @pytest.mark.parametrize(
@@ -108,4 +110,10 @@ def test_a_local_index_is_refused_by_another_model(local_index, monkeypatch):
     ],
 )  # fmt: skip
 def test_search_finds_the_rule_by_meaning(local_index, query, expected):
-    assert expected in cites(search_handbook.invoke({"query": query, "as_of": TODAY, "limit": 3}))
+    assert expected in cites(search_fca_handbook(query, top_k=3, as_of=TODAY))
+
+
+def test_reading_the_section_recovers_the_rule_that_search_misses(local_index):
+    """Search returns the guidance, not the rule. Reading its whole section finds the rule next to it."""
+    first = search_fca_handbook("shipped to production with no QA", top_k=3, as_of=TODAY)["results"][0]
+    assert "XSYS 4.1.1R" in cites(get_fca_section(first["reference"], as_of=TODAY))

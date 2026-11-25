@@ -119,89 +119,94 @@ sequenceDiagram
 
 ### 2.3 Agentic Architecture: Agents, LLM Steps, Functions & Tools
 
-Which parts reason, which parts are plain code, and which parts are tools. **Today there are no autonomous agents**: LangGraph code fixes the order of steps, the model is called at three points inside them, and code (not the model) calls the MCP tools. The only planned agent is the Module 2 remediation subgraph.
+Which parts reason, which parts are plain code, and which parts are tools. There is **one agent**, `fca_compliance_reviewer`. It reviews one change against the FCA Handbook and the Consumer Credit Act, and one copy runs per change, in parallel. Triage and the executive summary are single LLM calls. Everything else is code.
+
+`pr_review_agent`, `codebase_review_agent` and `product_spec_agent` are whole pipelines that contain the agent, not agents themselves.
 
 ```mermaid
 flowchart TB
-    START(["Caller"]) --> IN["inbound_adapter<br/>FUNCTION (stub)<br/>PR / repo / PDF to AnalysisUnits"]
+    subgraph LEGEND["Legend"]
+        direction LR
+        L1["FUNCTION<br/>plain code"] ~~~ L2("LLM STEP<br/>one model call") ~~~ L5[["AGENT<br/>chooses its tools"]] ~~~ L3[/"TOOL<br/>read-only"/] ~~~ L4{"HUMAN<br/>decision"} ~~~ L6["Dashed:<br/>planned"]
+    end
+    LEGEND ~~~ START
+
+    START(["Caller"]) --> IN["inbound_adapter<br/>FUNCTION<br/>PR real, repo and PDF stubs"]
 
     subgraph CORE["core_analysis"]
-        TRI("triage_units<br/>LLM STEP 1<br/>relevance + search queries")
-        ROUTE["route_triaged_units<br/>FUNCTION<br/>one parallel branch per relevant unit"]
+        TRI("triage_units<br/>LLM STEP 1<br/>relevance + first queries")
+        ROUTE["route_triaged_units<br/>FUNCTION<br/>one branch per relevant change"]
 
         subgraph ANALYZE["analyze_unit x N"]
-            RET["Retrieve and dedupe passages<br/>FUNCTION<br/>runs every query from triage"]
-            CHECK("Cross-check unit against rules<br/>LLM STEP 2<br/>drafts Findings")
+            AGENT[["fca_compliance_reviewer<br/>AGENT<br/>search, read, search again, judge"]]
+            CHECK["Check the agent's work<br/>FUNCTION<br/>quotes, limits, gaps"]
         end
 
         subgraph SYNTH["synthesize_report"]
             RANK["Dedupe, rank, assign IDs, verdict<br/>FUNCTION"]
-            SUM("Executive summary<br/>LLM STEP 3<br/>cannot change the verdict")
+            SUM("Executive summary<br/>LLM STEP 2<br/>cannot change the verdict")
             REPORT["Assemble FindingsReport<br/>FUNCTION"]
         end
     end
 
-    subgraph TOOLS["MCP tools"]
-        FCA[/"FCA Handbook search<br/>TOOL<br/>search_fca_handbook"/]
-        CCA[/"CCA search<br/>TOOL<br/>query_consumer_credit_act"/]
-        CCADOC[/"CCA document fetch<br/>TOOL<br/>get_consumer_credit_act_document"/]
+    subgraph TOOLS["Agent tools"]
+        FCA[/"TOOL: search_fca_handbook<br/>TOOL: get_fca_section<br/>FCA Handbook RAG, MCP"/]
+        CCA[/"TOOL: query_consumer_credit_act<br/>TOOL: get_consumer_credit_act_document<br/>CCA server, MCP"/]
+        CIT[/"TOOL: check_citation<br/>FCA Handbook RAG, MCP"/]
     end
 
     GATE{"human_review_gate<br/>FUNCTION + optional HUMAN<br/>approve / filter / reject"}
 
     subgraph OUT["outbound_adapter"]
-        OUTPR["Module 1: PR comments<br/>FUNCTION (stub)"]
+        OUTPR["Module 1: report + PR comment<br/>FUNCTION"]
         OUTREPO["Module 2: remediation<br/>FUNCTION (stub today)<br/>AGENT (planned)"]
         OUTPDF["Module 3: PDF report<br/>FUNCTION (stub)"]
     end
 
-    AGTOOLS[/"TOOLS (planned)<br/>read_file, edit_file, run_tests,<br/>git_checkout_commit, gh pr create"/]
     DONE(["DeliverableResult"])
 
-    subgraph LEGEND["Legend"]
-        direction LR
-        L1["FUNCTION<br/>plain code"] ~~~ L2("LLM STEP<br/>one model call") ~~~ L3[/"TOOL<br/>called over MCP"/] ~~~ L4{"HUMAN<br/>decision"} ~~~ L5["AGENT<br/>planned"] ~~~ L6[/"TOOL<br/>planned"/]
-    end
-    LEGEND ~~~ START
-
     IN --> TRI --> ROUTE
-    ROUTE -->|"relevant units"| RET
-    ROUTE -->|"no relevant units"| RANK
-    RET --> CHECK --> RANK --> SUM --> REPORT --> GATE
-    RET <-->|"code calls tools"| TOOLS
+    ROUTE -->|"relevant"| AGENT
+    ROUTE -->|"none relevant"| RANK
+    AGENT <-->|"agent chooses, 15 calls at most"| TOOLS
+    AGENT --> CHECK --> RANK --> SUM --> REPORT --> GATE
+    CHECK -->|"always"| CIT
     GATE -->|"approved or filtered"| OUTPR & OUTREPO & OUTPDF
     GATE -->|"rejected"| DONE
-    OUTREPO <-.->|"agent chooses (planned)"| AGTOOLS
     OUTPR & OUTREPO & OUTPDF --> DONE
 
     classDef fn fill:#e5e7eb,stroke:#4b5563,color:#111827
     classDef llm fill:#dbeafe,stroke:#1d4ed8,color:#111827
     classDef tool fill:#dcfce7,stroke:#15803d,color:#111827
     classDef human fill:#fef3c7,stroke:#b45309,color:#111827
-    classDef agent fill:#f3e8ff,stroke:#7e22ce,color:#111827,stroke-dasharray:6 4
-    classDef planned fill:#dcfce7,stroke:#15803d,color:#111827,stroke-dasharray:6 4
-    class IN,ROUTE,RET,RANK,REPORT,OUTPR,OUTPDF,L1 fn
-    class TRI,CHECK,SUM,L2 llm
-    class FCA,CCA,CCADOC,L3 tool
+    classDef agent fill:#f3e8ff,stroke:#7e22ce,color:#111827,stroke-width:2px
+    classDef planned fill:#f3e8ff,stroke:#7e22ce,color:#111827,stroke-dasharray:6 4
+    class IN,ROUTE,CHECK,RANK,REPORT,OUTPR,OUTPDF,L1 fn
+    class TRI,SUM,L2 llm
+    class FCA,CCA,CIT,L3 tool
     class GATE,L4 human
-    class OUTREPO,L5 agent
-    class AGTOOLS,L6 planned
+    class AGENT,L5 agent
+    class OUTREPO,L6 planned
 ```
-
-**Legend:** grey = deterministic function, blue (rounded) = LLM step, green (slanted) = tool, amber = human decision, purple = planned agent. Dashed outline = not built yet, at least in part. Each pipeline uses one outbound module. The MCP tools are mock adapters unless `FCA_MCP_URL` and `CCA_MCP_URL` are set.
 
 | Kind | What it means here | Parts |
 |---|---|---|
-| **Agent** | A model chooses its own tools and next step, in a loop | None today. Planned: Module 2 remediation |
-| **LLM step** | One model call with a fixed prompt and no tools. Steps 1 and 2 must return a fixed schema; step 3 returns text | `triage_units`, the cross-check in `analyze_unit`, the summary in `synthesize_report` |
-| **Function** | Plain code, no model | Inbound adapters, routing, retrieval, deduplication, ranking, verdict, report assembly, outbound adapters |
-| **Tool** | An external capability, called over MCP. Code calls it using queries written by LLM step 1 | FCA Handbook search, CCA search, CCA document fetch |
+| **Agent** | A model chooses its own tools and next step, in a loop | `fca_compliance_reviewer` (`adapters/llm/reviewer_agent.py`). Planned: Module 2 remediation |
+| **LLM step** | One model call with a fixed prompt and no tools | `triage_units`, the summary in `synthesize_report` |
+| **Function** | Plain code, no model | Inbound and outbound adapters, routing, checking the agent's work (`core/review.py`), ranking, verdict, report |
+| **Tool** | Read-only, called over MCP (mock adapters unless `FCA_MCP_URL` and `CCA_MCP_URL` are set) | The five above. The agent cannot post, edit or run anything |
 | **Human** | A person decides. Off by default (`require_human_approval=False`), so reports are auto-approved | `human_review_gate` |
 
-- The model's influence on retrieval is limited to the queries and CCA sections it writes in LLM step 1. It cannot search again after seeing the results.
-- The verdict is computed by code (`_compute_verdict`), but from severities and statuses the model assigns in LLM step 2.
-- Citations and quotes written by the model are not yet checked against the retrieved passages.
-- The FCA adapter also supports fetching one rule (`get_fca_rule`), but no core node calls it yet.
+**What the code enforces, whatever the agent says**
+
+- Every quote is checked word for word. Unverified citations are removed, and the finding becomes `needs_review`.
+- An FCA rule can only be cited if the agent read its section. Search snippets do not count.
+- Guidance on its own cannot be a breach.
+- A finding marked `needs_review` is added, so the verdict cannot be `compliant`, if: the tool limit or step limit is reached, a tool fails, the agent gives no usable answer, it finds no issue without reading a rule, a sourcebook in scope could not be searched, or the change was truncated.
+- A warning heads the summary if any rule came from sample or mock data.
+- The change is passed as JSON-encoded data, and the prompt tells the agent not to follow instructions in it. This reduces prompt injection but cannot rule it out, which is why the checks above are code.
+
+**Known limits:** triage sees only the first 1,500 characters of each change and can drop it, and a review with no relevant changes is `compliant`. `COMPLIANCE_REVIEWER=workflow` switches back to the earlier fixed step, which has none of these checks.
 
 ---
 
@@ -327,7 +332,7 @@ Any callable (sync/async function) **or compiled LangGraph `StateGraph`** matchi
 ### 5.1 Core Subgraph Nodes (`core/graph.py`)
 
 1. **`triage_units`**: Evaluates each `AnalysisUnit` in `analysis_input.units` to filter out noise (e.g. formatting-only diffs, lockfiles, boilerplate legal disclaimers) and generate targeted FCA + CCA search queries per relevant unit.
-2. **Parallel Fan-Out (`Send("analyze_unit", ...)`)**: LangGraph dispatches one isolated `UnitAnalysisState` branch per relevant unit in parallel:
+2. **Parallel Fan-Out (`Send("analyze_unit", ...)`)**: LangGraph dispatches one isolated `UnitAnalysisState` branch per relevant unit in parallel. By default each runs the `fca_compliance_reviewer` agent and then checks its work (see 2.3). With `COMPLIANCE_REVIEWER=workflow`, each instead:
    - Calls `FCAHandbookPort.search_rules(...)` and `ConsumerCreditActPort.query_provisions(...)` / `get_document(...)` concurrently (`asyncio.gather`).
    - Invokes `ComplianceAnalyzerPort.analyze_unit(unit, fca_passages, cca_passages)` to cross-check the artefact against both regulatory texts and produce grounded `Finding` items.
    - Results merge into `PipelineState` / `CoreAnalysisState` via an append reducer (`Annotated[list[Finding], operator.add]`).

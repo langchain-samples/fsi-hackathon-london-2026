@@ -42,13 +42,14 @@ class CoreAnalysisState(TypedDict, total=False):
       - Output: `findings_report`
 
     Private keys (never leak into `PipelineState`):
-      - `triaged_units`, `unit_findings`, `queries_executed`
+      - `triaged_units`, `unit_findings`, `queries_executed`, `review_notes`
     """
 
     analysis_input: AnalysisInput
     triaged_units: list[TriagedUnit]
     unit_findings: Annotated[list[Finding], operator.add]
     queries_executed: Annotated[list[str], operator.add]
+    review_notes: Annotated[list[str], operator.add]
     findings_report: FindingsReport
 
 

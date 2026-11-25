@@ -1,73 +1,58 @@
-"""The MCP server, called through a real MCP client. In-process, over HTTP, and over stdio."""
+"""The MCP server, called by the core agent's own adapter: in-process, over HTTP and over stdio."""
 
+import asyncio
 import os
 import socket
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from langchain_core.tools import ToolException
-from mcp import StdioServerParameters
-from mcp_client import call_handbook, load_handbook_tools
+from mcp import Client, StdioServerParameters
 from mcp_server import server
 from utils import store
 
 ROOT = Path(__file__).resolve().parent.parent
-TODAY = "2026-11-25"
-NAMES = {"search_handbook", "get_provision", "lookup_glossary", "expand_references", "check_citation", "index_status"}
+NAMES = {"search_fca_handbook", "get_fca_section", "check_citation"}
 
 
-def test_tools_are_listed_with_descriptions(index):
-    tools = load_handbook_tools(server)
+async def _call(target, name, arguments):
+    async with Client(target) as client:
+        return await client.call_tool(name, arguments)
+
+
+def call(target, name, **arguments):
+    return asyncio.run(_call(target, name, arguments))
+
+
+async def _list(target):
+    async with Client(target) as client:
+        return (await client.list_tools()).tools
+
+
+def test_exactly_three_read_only_tools(index):
+    tools = asyncio.run(_list(server))
     assert {t.name for t in tools} == NAMES
-    assert all("\n" in t.description or len(t.description) > 40 for t in tools)
-    search = next(t for t in tools if t.name == "search_handbook")
-    assert set(search.args) == {"query", "sourcebooks", "provision_types", "as_of", "limit"}
-
-
-def test_check_citation_and_status(index):
-    good = {"reference": "XSYS 4.2.1R", "quote": "approved by a person other than", "as_of": TODAY}
-    assert call_handbook("check_citation", good, server) == {"ok": True, "problems": []}
-    assert call_handbook("check_citation", {**good, "quote": "made up"}, server)["ok"] is False
-    assert call_handbook("check_citation", {**good, "as_of": "soon"}, server)["ok"] is False
-    status = call_handbook("index_status", {}, server)
-    assert (status["provisions"], status["sourcebooks"]) == (13, ["XPRN", "XSYS"])
-
-
-def test_no_index_is_reported(empty_index):
-    assert call_handbook("index_status", {}, server)["ready"] is False
+    assert all(t.annotations.read_only_hint and len(t.description) > 100 for t in tools)
 
 
 @pytest.mark.parametrize(
     ("name", "arguments"),
     [
-        ("search_fca_handbook", {"query": "x"}),  # not a tool of this server
-        ("search_handbook", {"query": "x", "as_of": "soon"}),
-        ("get_provision", {"reference": "XSYS 99.9.9R", "as_of": TODAY}),
+        ("get_fca_rule", {"reference": "XSYS 4.1.1R"}),  # not a tool of this server
+        ("search_fca_handbook", {"query": "x", "as_of": "soon"}),
+        ("search_fca_handbook", {"query": "x", "top_k": "many"}),
+        ("get_fca_section", {"reference": "XSYS 99.9.9R"}),
     ],
 )
-def test_failures_are_errors_not_text(index, name, arguments):
-    with pytest.raises(ToolException):
-        call_handbook(name, arguments, server)
+def test_failures_are_mcp_errors(index, name, arguments):
+    assert call(server, name, **arguments).is_error
 
 
-def test_a_search_without_an_index_is_an_error(empty_index):
-    with pytest.raises(ToolException, match="no Handbook index"):
-        call_handbook("search_handbook", {"query": "x"}, server)
-
-
-def test_a_search_that_matches_nothing_is_empty(index):
-    arguments = {"query": "x", "sourcebooks": ["NONE"], "as_of": TODAY}
-    assert call_handbook("search_handbook", arguments, server) == []
-
-
-def test_bad_arguments_become_a_message_for_the_model(index):
-    search = next(t for t in load_handbook_tools(server) if t.name == "search_handbook")
-    message = {"name": search.name, "args": {"query": "x", "limit": "many"}, "id": "1", "type": "tool_call"}
-    assert search.invoke(message).status == "error"
+def test_a_missing_index_is_an_mcp_error(empty_index):
+    result = call(server, "search_fca_handbook", query="x")
+    assert result.is_error and "no Handbook index" in result.content[0].text
 
 
 @pytest.fixture
@@ -89,22 +74,27 @@ def http_server(index):
     process.wait(10)
 
 
-def test_http_with_parallel_sub_agents(http_server):
-    search = next(t for t in load_handbook_tools(http_server) if t.name == "search_handbook")
-    with ThreadPoolExecutor(8) as pool:
-        results = list(pool.map(lambda _: search.invoke({"query": "XSYS 4.2.1R", "as_of": TODAY}), range(24)))
-    assert "XSYS 4.2.1R" in results[0] and len(set(results)) == 1
+def test_the_core_agents_adapter_works_with_this_server(http_server):
+    from fca_compliance_agent import MCPFCAHandbookAdapter, MCPServerConfig, MCPToolError
 
+    adapter = MCPFCAHandbookAdapter(server_config=MCPServerConfig(url=http_server))
 
-async def _in_event_loop(url):
-    return load_handbook_tools(url), await load_handbook_tools(url)[0].ainvoke({"query": "audit logs", "as_of": TODAY})
+    async def run():
+        found = await adapter.search_rules("XSYS 4.2.1R", top_k=3)
+        assert found[0].reference == "XSYS 4.2.1R" and found[0].metadata["source"] == "fictional-sample"
+        assert await adapter.search_rules("testing", sourcebooks=["CONC", "PRIN 2A"]) == []
+        section = await adapter.get_section("XSYS 4.1.2G")
+        assert [p.reference for p in section.passages] == ["XSYS 4.1.1R", "XSYS 4.1.2G", "XSYS 4.1.3R"]
+        assert section.complete and "emergency change" in section.definitions and section.links == ["XSYS 4.2.1R"]
+        good = await adapter.check_citation("XSYS 4.2.1R", "approved by a person other than")
+        assert good.ok and good.binding and good.fictional
+        assert not (await adapter.check_citation("XSYS 4.2.1R", "approved by absolutely nobody else")).ok
+        with pytest.raises(MCPToolError, match="not in force"):
+            await adapter.get_section("XSYS 99.9.9R")
+        many = await asyncio.gather(*(adapter.search_rules("audit logs") for _ in range(24)))
+        assert len({tuple(p.reference for p in found) for found in many}) == 1
 
-
-def test_http_inside_an_event_loop(http_server):
-    import asyncio
-
-    tools, result = asyncio.run(_in_event_loop(http_server))
-    assert len(tools) == len(NAMES) and "XSYS 5.1.1R" in result
+    asyncio.run(run())
 
 
 def test_second_server_is_refused_clearly(http_server):
@@ -117,4 +107,4 @@ def test_stdio(index):
     store.close()
     parameters = StdioServerParameters(command=sys.executable, args=["mcp_server.py", "--stdio"], cwd=str(ROOT),
                                        env=os.environ.copy())  # fmt: skip
-    assert call_handbook("index_status", {}, parameters)["source"] == "fictional-sample"
+    assert not call(parameters, "get_fca_section", reference="XSYS 4.1.1R").is_error

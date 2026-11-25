@@ -5,6 +5,7 @@ never damages the index in use, and an older snapshot can be put back by moving 
 """
 
 import hashlib
+import re
 import threading
 import uuid
 from datetime import date
@@ -13,13 +14,15 @@ from functools import lru_cache
 from qdrant_client import QdrantClient, models as m
 
 from utils.embeddings import get_embeddings, sparse_document, sparse_query
-from utils.references import Reference, find_references, parse_reference
+from utils.references import Reference, find_references, parse_reference, section_of
 from utils.schema import Provision, Snapshot
 from utils.settings import get_settings
 
 _NAMESPACE = uuid.UUID("7f6f6a3e-5d1c-4a52-9a53-0a4f6d0b1c11")
 _BATCH = 64
+_FORMAT = 2  # raise this when what is stored changes, so the next ingest rebuilds the index
 _MAX_CHARS = 1500  # the local model reads 512 tokens and silently ignores the rest
+BINDING = ("R", "UK", "EU", "D")  # rules, retained law and directions; not guidance (G) or evidential (E)
 _OPEN_ENDED = date.max.toordinal()
 # Local Qdrant is in-process and not built for parallel access; sub-agents search in parallel threads.
 _lock = threading.RLock()
@@ -81,7 +84,8 @@ def build_index(snapshot: Snapshot, alias: str) -> str:
     s, c = get_settings(), client()
     embeddings = get_embeddings(s.embedding_model)
     chunks = [(p, i, part) for p in snapshot.provisions for i, part in enumerate(split_text(p.text))]
-    model_id = hashlib.sha256(s.embedding_model.encode()).hexdigest()[:6]
+    position = {id(p): n for n, p in enumerate(snapshot.provisions)}  # a snapshot lists provisions in Handbook order
+    model_id = hashlib.sha256(f"{_FORMAT}|{s.embedding_model}".encode()).hexdigest()[:6]
     name = f"{alias}__{snapshot.manifest.snapshot_date:%Y%m%d}_{snapshot.sha256[:8]}_{model_id}"
     glossary = f"{name}__glossary"
 
@@ -99,7 +103,7 @@ def build_index(snapshot: Snapshot, alias: str) -> str:
         )
         c.create_collection(glossary, vectors_config=m.VectorParams(size=1, distance=m.Distance.COSINE))
         if s.qdrant_url:  # local mode has no payload indexes
-            for field in ("key", "sourcebook", "provision_type", "cites_keys"):
+            for field in ("key", "sourcebook", "chapter", "section", "provision_type"):
                 c.create_payload_index(name, field, m.PayloadSchemaType.KEYWORD)
             for field in ("from_day", "to_day"):
                 c.create_payload_index(name, field, m.PayloadSchemaType.INTEGER)
@@ -112,7 +116,7 @@ def build_index(snapshot: Snapshot, alias: str) -> str:
             m.PointStruct(
                 id=str(uuid.uuid5(_NAMESPACE, f"{p.citation}|{p.effective_from}|{i}")),
                 vector={"dense": dense, "sparse": sparse_document(text, p.key)},
-                payload=_payload(p, i, part, snapshot, s.embedding_model),
+                payload=_payload(p, i, part, position[id(p)], snapshot, s.embedding_model),
             )
             for (p, i, part), text, dense in zip(batch, texts, embeddings.embed_documents(texts), strict=True)
         ]
@@ -138,11 +142,17 @@ def build_index(snapshot: Snapshot, alias: str) -> str:
     return name
 
 
-def _payload(p: Provision, part_number: int, part: str, snapshot: Snapshot, embedding_model: str) -> dict:
+def _payload(
+    p: Provision, part_number: int, part: str, position: int, snapshot: Snapshot, embedding_model: str
+) -> dict:
     return {
+        # full_text means that reading never depends on how the text was split for searching
         "key": p.key, "citation": p.citation, "sourcebook": p.sourcebook, "provision_type": p.provision_type,
-        "heading_path": p.heading_path, "text": part, "part": part_number, "cites": p.cites,
-        "cites_keys": p.cites_keys, "url": p.url,
+        "heading_path": p.heading_path, "text": part, "part": part_number,
+        "full_text": p.text if part_number == 0 else None,
+        "cites": p.cites,
+        "chapter": p.chapter, "section": p.section, "subheading": p.subheading, "position": position,
+        "url": p.url,
         "effective_from": p.effective_from and p.effective_from.isoformat(),
         "effective_to": p.effective_to and p.effective_to.isoformat(),
         "from_day": p.effective_from.toordinal() if p.effective_from else 0,
@@ -172,24 +182,22 @@ def _live() -> tuple[QdrantClient, str]:
     return c, name
 
 
-def _filter(as_of: date, sourcebooks: list[str] | None = None, types: list[str] | None = None,
-            must: list | None = None) -> m.Filter:  # fmt: skip
+def _filter(as_of: date, scope: list[str] | None = None, must: list | None = None) -> m.Filter:
     conditions: list = [
         m.FieldCondition(key="from_day", range=m.Range(lte=as_of.toordinal())),
         m.FieldCondition(key="to_day", range=m.Range(gte=as_of.toordinal())),
     ]
-    if sourcebooks:
-        conditions.append(m.FieldCondition(key="sourcebook", match=m.MatchAny(any=[x.upper() for x in sourcebooks])))
-    if types:
-        conditions.append(m.FieldCondition(key="provision_type", match=m.MatchAny(any=[x.upper() for x in types])))
+    if scope:
+        conditions.append(m.Filter(should=[
+            m.FieldCondition(key=field, match=m.MatchAny(any=scope)) for field in ("sourcebook", "chapter")
+        ]))  # fmt: skip
     return m.Filter(must=conditions + (must or []))
 
 
-def search(query: str, as_of: date, sourcebooks: list[str] | None = None, types: list[str] | None = None,
-           limit: int = 8) -> list[dict]:  # fmt: skip
+def search(query: str, as_of: date, scope: list[str] | None = None, limit: int = 8) -> list[dict]:
     """Hybrid search over the provisions in force on a date. Ranks are fused, so the score is not a confidence."""
     s = get_settings()
-    where = _filter(as_of, sourcebooks, types)
+    where = _filter(as_of, scope)
     with _lock:
         c, name = _live()
         sample = c.scroll(name, limit=1)[0]
@@ -214,9 +222,7 @@ def search(query: str, as_of: date, sourcebooks: list[str] | None = None, types:
     best: dict[tuple, dict] = {}  # several parts of one long provision count once
     for ref in find_references(query):  # a provision named in the query always comes first
         row = get(str(ref), as_of)
-        if row and (not sourcebooks or row["sourcebook"] in {x.upper() for x in sourcebooks}) and (
-            not types or row["provision_type"] in {x.upper() for x in types}
-        ):
+        if row and (not scope or row["sourcebook"] in scope or row["chapter"] in scope):
             best[(row["citation"], row["effective_from"])] = row
     for point in points:
         best.setdefault((point.payload["citation"], point.payload["effective_from"]), point.payload)
@@ -233,7 +239,7 @@ def _scroll_all(c: QdrantClient, name: str, where: m.Filter) -> list[dict]:
 
 
 def get(ref: str, as_of: date) -> dict | None:
-    """The full text of one provision in force on a date, with the parts of a long one joined up again."""
+    """One provision in force on a date, in full."""
     parsed: Reference | None = parse_reference(ref)
     if parsed is None:
         return None
@@ -245,43 +251,46 @@ def get(ref: str, as_of: date) -> dict | None:
             if key == parsed.key and parsed.type:
                 rows = [r for r in rows if r["provision_type"] == parsed.type]
             if rows:
-                newest = max(rows, key=lambda r: r["from_day"])
-                parts = [r for r in rows if (r["citation"], r["from_day"]) == (newest["citation"], newest["from_day"])]
-                parts.sort(key=lambda r: r["part"])
-                return {**newest, "part": 0, "text": "\n".join(r["text"] for r in parts)}
+                newest = max((r for r in rows if r["part"] == 0), key=lambda r: r["from_day"])
+                return {**newest, "text": newest["full_text"]}
     return None
 
 
-def cited_by(key: str, as_of: date) -> list[str]:
+def get_section(section: str, as_of: date) -> list[dict]:
+    """Every provision in force in a section, in full and in Handbook order."""
     with _lock:
         c, name = _live()
-        rows = _scroll_all(c, name, _filter(as_of, must=[m.FieldCondition(key="cites_keys", match=m.MatchValue(value=key))]))
-    return sorted({r["citation"] for r in rows})
+        rows = _scroll_all(c, name, _filter(as_of, must=[
+            m.FieldCondition(key="section", match=m.MatchValue(value=section))]))  # fmt: skip
+    newest: dict[str, dict] = {}
+    for row in rows:
+        if row["part"] == 0 and row["from_day"] >= newest.get(row["citation"], row)["from_day"]:
+            newest[row["citation"]] = {**row, "text": row["full_text"]}
+    return sorted(newest.values(), key=lambda r: r["position"])
 
 
-def glossary(term: str) -> list[dict]:
-    """Exact matches for a term (ignoring case), or failing that, terms that contain it."""
-    wanted = term.casefold().strip()
-    if not wanted:
-        return []
+def sections(chapter: str, as_of: date) -> list[str]:
+    """The sections in a chapter or sourcebook that have provisions in force, in Handbook order."""
     with _lock:
         c, name = _live()
-        rows = _scroll_all(c, f"{name}__glossary", m.Filter(
-            must=[m.FieldCondition(key="term_key", match=m.MatchValue(value=wanted))]))  # fmt: skip
-        if rows:
-            return rows
-        everything = _scroll_all(c, f"{name}__glossary", m.Filter())
-    return sorted((r for r in everything if wanted in r["term_key"]), key=lambda r: len(r["term"]))[:5]
+        rows = _scroll_all(c, name, _filter(as_of, [chapter]))
+    return list(dict.fromkeys(r["section"] for r in sorted(rows, key=lambda r: r["position"])))
 
 
-def status() -> dict:
-    """What the live index holds."""
+def scopes() -> set[str]:
+    """Every sourcebook and chapter in the index."""
     with _lock:
         c, name = _live()
         rows = _scroll_all(c, name, m.Filter())
-    first = rows[0]
-    return {
-        "snapshot_date": first["snapshot_date"], "source": first["source"], "attribution": first["attribution"],
-        "embedding_model": first["embedding_model"], "sourcebooks": sorted({r["sourcebook"] for r in rows}),
-        "provisions": len({(r["citation"], r["effective_from"]) for r in rows}),
-    }  # fmt: skip
+    return {r["sourcebook"] for r in rows} | {r["chapter"] for r in rows}
+
+
+def definitions(text: str, limit: int = 10) -> dict[str, str]:
+    """Glossary terms used in the text. Long terms first, as they are the more specific ones."""
+    with _lock:
+        c, name = _live()
+        rows = _scroll_all(c, f"{name}__glossary", m.Filter())
+    lowered = text.casefold()
+    used = [r for r in rows if re.search(rf"\b{re.escape(r['term_key'])}s?\b", lowered)]
+    used.sort(key=lambda r: -len(r["term"]))
+    return {r["term"]: r["definition"] for r in used[:limit]}

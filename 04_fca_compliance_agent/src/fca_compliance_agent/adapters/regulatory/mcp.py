@@ -15,7 +15,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from ...domain.models import RegulatoryPassage, RegulatorySource
+from ...domain.models import (
+    CitationCheck,
+    RegulatoryPassage,
+    RegulatorySearch,
+    RegulatorySection,
+    RegulatorySource,
+)
 
 # Low-level async MCP tool invocation callable (allows injecting a fake transport in unit tests).
 MCPCaller = Callable[[str, dict[str, Any]], Awaitable[Any]]
@@ -71,6 +77,28 @@ class MCPToolMapping:
     top_k_arg: str | None = "top_k"
     filter_arg: str | None = None
     reference_arg: str = "reference"
+    section_tool: str | None = "get_fca_section"
+    citation_tool: str | None = "check_citation"
+
+
+def _structured(raw_result: Any) -> dict[str, Any]:
+    """The JSON object a tool returned. Raises `MCPToolError` for an error or any other shape."""
+    _raise_if_error(raw_result)
+    for name in ("structured_content", "structuredContent"):
+        payload = getattr(raw_result, name, None)
+        if isinstance(payload, dict):
+            return payload
+    if isinstance(raw_result, dict):
+        return raw_result
+    content = getattr(raw_result, "content", None) or []
+    text = "\n".join(t for t in (getattr(block, "text", None) for block in content) if t)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+    if not isinstance(payload, dict):
+        raise MCPToolError("The MCP tool did not return a JSON object.")
+    return payload
 
 
 def parse_mcp_passages(
@@ -335,6 +363,63 @@ class MCPFCAHandbookAdapter(_BaseMCPClientAdapter):
         # Graceful fallback if the MCP server only exposes semantic search
         results = await self.search_rules(reference, top_k=1)
         return results[0] if results else None
+
+    # `FCAHandbookResearchPort`, for the fca_compliance_reviewer agent -----------------------------
+
+    async def search(
+        self,
+        query: str,
+        *,
+        sourcebooks: list[str] | None = None,
+        top_k: int = 8,
+    ) -> RegulatorySearch:
+        args: dict[str, Any] = {self._mapping.query_arg: query}
+        if self._mapping.top_k_arg:
+            args[self._mapping.top_k_arg] = top_k
+        if self._mapping.filter_arg and sourcebooks:
+            args[self._mapping.filter_arg] = sourcebooks
+        payload = _structured(await self._call_tool(self._mapping.search_tool, args))
+        return RegulatorySearch(
+            passages=parse_mcp_passages(
+                {"results": payload.get("results", [])}, source="fca_handbook", default_reference="FCA"
+            ),
+            not_in_index=payload.get("not_in_index", []),
+        )
+
+    async def get_section(self, reference: str) -> RegulatorySection:
+        if not self._mapping.section_tool:
+            raise MCPToolError("This MCP server has no tool for reading a section.")
+        payload = _structured(
+            await self._call_tool(
+                self._mapping.section_tool, {self._mapping.reference_arg: reference}
+            )
+        )
+        return RegulatorySection(
+            section=payload["section"],
+            passages=parse_mcp_passages(
+                {"results": payload["results"]}, source="fca_handbook", default_reference=reference
+            ),
+            complete=payload["complete"],
+            outline=payload.get("outline", []),
+            definitions=payload.get("definitions", {}),
+            links=payload.get("links", []),
+        )
+
+    async def check_citation(self, reference: str, quote: str) -> CitationCheck:
+        if not self._mapping.citation_tool:
+            raise MCPToolError("This MCP server has no tool for checking a citation.")
+        payload = _structured(
+            await self._call_tool(
+                self._mapping.citation_tool,
+                {self._mapping.reference_arg: reference, "quote": quote},
+            )
+        )
+        return CitationCheck(
+            ok=payload["ok"],
+            problems=payload.get("problems", []),
+            binding=payload.get("binding"),
+            fictional=payload.get("source") == "fictional-sample",
+        )
 
 
 class MCPConsumerCreditActAdapter(_BaseMCPClientAdapter):

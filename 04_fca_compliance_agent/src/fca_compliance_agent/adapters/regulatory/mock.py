@@ -8,7 +8,12 @@ from __future__ import annotations
 
 import re
 
-from ...domain.models import RegulatoryPassage
+from ...domain.models import (
+    CitationCheck,
+    RegulatoryPassage,
+    RegulatorySearch,
+    RegulatorySection,
+)
 
 _FCA_CORPUS: list[RegulatoryPassage] = [
     RegulatoryPassage(
@@ -156,6 +161,10 @@ def _score_passage(query: str, passage: RegulatoryPassage) -> float:
     return len(overlap) / max(len(q_tokens), 1)
 
 
+def _as_mock(passage: RegulatoryPassage) -> RegulatoryPassage:
+    return passage.model_copy(update={"metadata": {**passage.metadata, "corpus": "mock"}})
+
+
 class MockFCAHandbookAdapter:
     """In-memory keyword-scored mock implementing `FCAHandbookPort`."""
 
@@ -194,6 +203,45 @@ class MockFCAHandbookAdapter:
             if passage.reference.strip().upper() == target:
                 return passage
         return None
+
+
+    # `FCAHandbookResearchPort`, for the fca_compliance_reviewer agent -----------------------------
+
+    async def search(
+        self,
+        query: str,
+        *,
+        sourcebooks: list[str] | None = None,
+        top_k: int = 8,
+    ) -> RegulatorySearch:
+        found = await self.search_rules(query, sourcebooks=sourcebooks, top_k=top_k)
+        return RegulatorySearch(passages=[_as_mock(p) for p in found])
+
+    async def get_section(self, reference: str) -> RegulatorySection:
+        wanted = reference.strip().upper()
+        section = ".".join(wanted.split(".")[:2])
+        passages = [
+            _as_mock(p)
+            for p in self._passages
+            if ".".join(p.reference.upper().split(".")[:2]) == section
+        ]
+        if not passages or (
+            wanted != section and wanted not in {p.reference.upper() for p in passages}
+        ):
+            raise ValueError(f"{reference} is not in the mock Handbook. Do not cite it.")
+        return RegulatorySection(section=section, passages=passages)
+
+    async def check_citation(self, reference: str, quote: str) -> CitationCheck:
+        rule = await self.get_rule(reference)
+        if rule is None:
+            return CitationCheck(ok=False, problems=[f"{reference} is not in the mock Handbook"])
+        ok = len(quote.split()) >= 4 and " ".join(quote.split()) in rule.text
+        return CitationCheck(
+            ok=ok,
+            problems=[] if ok else [f"the quote is not word for word in {reference}"],
+            binding=rule.reference.endswith("R"),
+            fictional=True,
+        )
 
 
 class MockConsumerCreditActAdapter:

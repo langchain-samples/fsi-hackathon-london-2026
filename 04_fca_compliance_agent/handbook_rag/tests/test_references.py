@@ -1,5 +1,5 @@
 import pytest
-from utils.references import ancestors, find_references, parse_reference
+from utils.references import ancestors, find_references, parse_reference, section_of
 
 
 @pytest.mark.parametrize(
@@ -37,3 +37,17 @@ def test_sentence_end_is_not_part_of_the_reference():
 
 def test_ancestors():
     assert ancestors("SYSC 15A.2.1") == ["SYSC 15A.2", "SYSC 15A"]
+
+
+@pytest.mark.parametrize(
+    ("key", "section"),
+    [
+        ("SYSC 15A.2.1", "SYSC 15A.2"),
+        ("SYSC 15A.2", "SYSC 15A.2"),
+        ("COBS 4.7.-1A", "COBS 4.7"),
+        ("SYSC 1 ANNEX 1.2", "SYSC 1 ANNEX 1"),
+        ("SYSC 4", "SYSC 4"),
+    ],
+)
+def test_section_of(key, section):
+    assert section_of(key) == section
