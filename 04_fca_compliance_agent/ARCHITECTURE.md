@@ -41,8 +41,8 @@ flowchart TB
         direction LR
         IN_PR["PR review<br/>gh pr diff"]
         IN_REPO["Codebase<br/>git clone"]
-        IN_PDF["Product spec<br/>PDF parse (planned)"]
-        IN_PR ~~~ IN_REPO ~~~ IN_PDF
+        IN_SPEC["Product spec<br/>PDF, Markdown or text"]
+        IN_PR ~~~ IN_REPO ~~~ IN_SPEC
     end
 
     subgraph Hexagon["Core compliance agent (hexagon interior)"]
@@ -56,8 +56,8 @@ flowchart TB
         direction LR
         OUT_PR["PR comment<br/>gh pr comment"]
         OUT_REPO["Remediation PR<br/>edit + git + gh pr create"]
-        OUT_PDF["PDF report<br/>(planned)"]
-        OUT_PR ~~~ OUT_REPO ~~~ OUT_PDF
+        OUT_SPEC["PDF report<br/>saved in reports/"]
+        OUT_PR ~~~ OUT_REPO ~~~ OUT_SPEC
     end
 
     subgraph Regulatory["Regulatory ports and MCP adapters (stdio / Streamable HTTP)"]
@@ -110,7 +110,7 @@ sequenceDiagram
 
 Which parts reason, which parts are plain code, and which parts are tools. **The review of each change against the FCA Handbook and the Consumer Credit Act is a placeholder for an agent that is being built separately.** Until it lands, that step is fixed: code runs the searches and one LLM call judges the results. Triage, the executive summary and each file that Module 2 remediates are single LLM calls. Everything else is code.
 
-`pr_review_agent` and `codebase_review_agent` are whole pipelines, not agents themselves.
+`pr_review_agent`, `codebase_review_agent` and `product_spec_agent` are whole pipelines, not agents themselves. `compliance_agent` puts chat in front of all three: see [section 6](#6-combined-graph--output-type).
 
 #### The pipeline
 
@@ -118,7 +118,7 @@ Read from top to bottom. The purple step is expanded in the next diagram.
 
 ```mermaid
 flowchart TB
-    IN["<b>inbound_adapter</b><br/>FUNCTION<br/>PR and codebase"]
+    IN["<b>inbound_adapter</b><br/>FUNCTION<br/>PR, codebase or product spec"]
     TRI("<b>triage_units</b><br/>LLM STEP 1<br/>relevance and first queries")
     AGENT[["<b>analyze_unit</b>, once per relevant change<br/>AGENT: PLACEHOLDER<br/>reviews against the FCA Handbook and the CCA"]]
     RANK["<b>synthesize_report</b><br/>FUNCTION<br/>dedupe, rank, assign IDs, verdict"]
@@ -126,7 +126,7 @@ flowchart TB
     GATE{{"<b>human_review_gate</b><br/>optional HUMAN<br/>approve, filter or reject"}}
     M1["<b>Module 1</b><br/>FUNCTION<br/>report and PR comment"]
     M2("<b>Module 2</b><br/>LLM STEP 4, per file<br/>remediation PR")
-    M3[["<b>Module 3</b><br/>planned<br/>PDF report"]]
+    M3["<b>Module 3</b><br/>FUNCTION<br/>report and PDF"]
 
     IN --> TRI --> AGENT --> RANK --> SUM --> GATE
     GATE --> M1
@@ -138,13 +138,13 @@ flowchart TB
     classDef tool fill:#dcfce7,stroke:#15803d,color:#111827
     classDef human fill:#fef3c7,stroke:#b45309,color:#111827
     classDef agent fill:#f3e8ff,stroke:#7e22ce,color:#111827,stroke-dasharray:6 4
-    class IN,RANK,M1 fn
+    class IN,RANK,M1,M3 fn
     class TRI,SUM,M2 llm
     class GATE human
-    class AGENT,M3 agent
+    class AGENT agent
 ```
 
-Two short cuts are left out of the picture: if no change is relevant, triage goes straight to `synthesize_report`, and if a person rejects the report, the gate ends the run. Only the module that was started runs.
+Two short cuts are left out of the picture: if no change is relevant, triage goes straight to `synthesize_report`, and if a person rejects the report, the gate ends the run. Only the module that was started runs. If its `output_type` is `report`, it delivers only the report.
 
 #### Inside `analyze_unit`
 
@@ -184,11 +184,11 @@ flowchart LR
 
 | Kind | Colour | What it means here | Parts |
 |---|---|---|---|
-| **Agent** | Purple, dashed (also anything planned) | A model chooses its own tools and next step, in a loop | None built yet. Placeholder: the review in `analyze_unit` |
+| **Agent** | Purple, dashed | A model chooses its own tools and next step, in a loop | None built yet. Placeholder: the review in `analyze_unit` |
 | **LLM step** | Blue | One model call with a fixed prompt and no tools | `triage_units`, the cross-check in `analyze_unit` (until the agent replaces it), the summary in `synthesize_report`, and `LangChainCodeRemediator` in Module 2 |
 | **Function** | Grey | Plain code, no model | Inbound and outbound adapters, routing, retrieval, grounding citations, ranking, verdict, report |
 | **Tool** | Green | Read-only, called over MCP (`handbook_rag` via `FCA_MCP_URL` / default `http://127.0.0.1:8765/mcp`; `fca-regulatory-mcp` via `CCA_MCP_URL` / stdio) | `search_fca_handbook`, `get_fca_section`, `check_fca_citation`, `query_consumer_credit_act`, `get_consumer_credit_act_document` |
-| **Human** | Amber | A person decides. Off by default (`require_human_approval=False`), so reports are auto-approved | `human_review_gate` |
+| **Human** | Amber | A person decides. Off by default (`require_human_approval=False`), so reports are auto-approved. From chat, it is on for anything that writes to GitHub | `human_review_gate` |
 
 **For the agent that fills the placeholder:** `FCAHandbookResearchPort` (`ports/regulatory.py`), which `MCPFCAHandbookAdapter` implements, offers `search` (breadth, snippets), `get_section` (depth, a whole section in order) and `check_citation` (is the quote word for word, and is the provision binding). Failures raise `MCPToolError`, so an error is never mistaken for a rule. Code should still check every quote after the agent answers.
 
