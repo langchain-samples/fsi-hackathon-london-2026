@@ -1,22 +1,25 @@
 """End-to-end verification of the hexagonal compliance agent architecture.
 
-Covers:
-  1. All three swappable I/O modules (PR Review, Codebase Agentic Remediation Subgraph, Product Spec)
-  2. Map-reduce triage filtering & parallel Send fan-out
-  3. Zero-relevant-units edge case (compliant short-circuit)
-  4. Optional HITL LangGraph interrupt() gate: approve, filter, and reject flows
-  5. MCP driven adapter tool-argument mapping & response normalisation plugged into Core
-  6. Static AST hexagonal boundary check ensuring domain/ports/core have zero adapter/infra imports
+Tests exercise the REAL inbound/outbound behaviour adapters (`build_github_pr_review_module`,
+`build_github_codebase_review_module`) while injecting mock API adapters (`LocalMockGitHubClient`,
+fake MCP callers, and deterministic test-only LLM doubles) that write outputs to disk and report
+to stdout instead of calling external services.
 
-Note: Unit tests inject a lightweight test-only `_FakeComplianceAnalyzer` implementing
-`ComplianceAnalyzerPort` so CI stays deterministic and secret-free. The production package
-uses `LangChainComplianceAnalyzer` directly via `.env`.
+Covers:
+  1. Real PR Review & Codebase Remediation behaviour adapters backed by `LocalMockGitHubClient`
+  2. Product Spec stub module (PDF adapter not yet implemented)
+  3. Map-reduce triage filtering & parallel Send fan-out
+  4. Zero-relevant-units edge case (compliant short-circuit)
+  5. Optional HITL LangGraph interrupt() gate: filter and reject flows
+  6. MCP driven adapter tool-argument mapping & response normalisation plugged into Core
+  7. Static AST hexagonal boundary check ensuring domain/ports/core have zero adapter/infra imports
 """
 
 from __future__ import annotations
 
 import ast
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -34,16 +37,60 @@ from fca_compliance_agent import (
     MCPToolMapping,
     MockConsumerCreditActAdapter,
     MockFCAHandbookAdapter,
-    PullRequestDiffLocation,
     RegulatoryCitation,
     RegulatoryPassage,
     TriagedUnit,
-    build_codebase_review_module,
     build_core_analysis_subgraph,
     build_pipeline_for_module,
-    build_pr_review_module,
     build_product_spec_module,
 )
+from fca_compliance_agent.adapters.github_codebase import (
+    FileRemediationResult,
+    build_github_codebase_review_module,
+)
+from fca_compliance_agent.adapters.github_pr import build_github_pr_review_module
+from fca_compliance_agent.adapters.outbound.github_client import LocalMockGitHubClient
+
+_SAMPLE_PR_DIFF = """diff --git a/src/underwriting/approve.py b/src/underwriting/approve.py
+index 1111111..2222222 100644
+--- a/src/underwriting/approve.py
++++ b/src/underwriting/approve.py
+@@ -18,3 +18,5 @@ def evaluate_loan_application(app):
++skip_affordability = True
++BANNER_COPY = 'Instant cash - guaranteed approval in 60 seconds!'
+diff --git a/src/contracts/withdrawal.py b/src/contracts/withdrawal.py
+index 3333333..4444444 100644
+--- a/src/contracts/withdrawal.py
++++ b/src/contracts/withdrawal.py
+@@ -5,2 +5,2 @@ def withdrawal_window():
+-withdrawal_days = 14
++withdrawal_days = 7  # shortened cooling-off window
+diff --git a/static/button.css b/static/button.css
+index 5555555..6666666 100644
+--- a/static/button.css
++++ b/static/button.css
+@@ -1,2 +1,2 @@
+-.btn { color: blue; }
++.btn { color: navy; }
+"""
+
+_CSS_ONLY_PR_DIFF = """diff --git a/static/theme.css b/static/theme.css
+index 1111111..2222222 100644
+--- a/static/theme.css
++++ b/static/theme.css
+@@ -1,1 +1,1 @@
+-body { margin: 4px; }
++body { margin: 0; }
+"""
+
+_SINGLE_FILE_PR_DIFF = """diff --git a/withdrawal.py b/withdrawal.py
+index 1111111..2222222 100644
+--- a/withdrawal.py
++++ b/withdrawal.py
+@@ -1,1 +1,1 @@
+-withdrawal_days = 14
++withdrawal_days = 7
+"""
 
 
 class _FakeComplianceAnalyzer:
@@ -139,6 +186,30 @@ class _FakeComplianceAnalyzer:
         return f"Found {len(findings)} FCA/CCA finding(s) in '{analysis_input.title}'."
 
 
+class _DeterministicCodeRemediator:
+    """Deterministic LLM double for `CodeRemediator` used alongside the real outbound behaviour."""
+
+    async def remediate_file(
+        self,
+        *,
+        file_path: str,
+        original_content: str,
+        findings: list[Finding],
+        repo_summary: str = "",
+    ) -> FileRemediationResult:
+        updated = (
+            original_content.replace("default_notice_days = 5", "default_notice_days = 14")
+            .replace("hide_apr = True", "hide_apr = False")
+        )
+        if updated == original_content:
+            updated = original_content + "\n# remediated\n"
+        return FileRemediationResult(
+            can_fix=True,
+            updated_content=updated,
+            change_summary=f"Applied {len(findings)} compliance fix(es) to {file_path}.",
+        )
+
+
 def _build_test_core():
     return build_core_analysis_subgraph(
         fca_port=MockFCAHandbookAdapter(),
@@ -149,82 +220,109 @@ def _build_test_core():
 
 class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
     async def test_pr_review_module_end_to_end(self) -> None:
-        pipeline = build_pipeline_for_module(
-            build_pr_review_module(),
-            core_subgraph=_build_test_core(),
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(
+                output_dir=tmp_path / "mock_github",
+                pr_meta={
+                    "title": "PR #77: Fast-track loan onboarding",
+                    "body": "Speeds up onboarding.",
+                    "headRefOid": "deadbeef77",
+                },
+                pr_diff=_SAMPLE_PR_DIFF,
+            )
+            pipeline = build_pipeline_for_module(
+                build_github_pr_review_module(
+                    github_client=mock_gh,
+                    reports_dir=tmp_path / "reports",
+                ),
+                core_subgraph=_build_test_core(),
+            )
 
-        result = await pipeline.ainvoke(
-            {
-                "raw_input": {
-                    "pr_url": "https://github.com/acme-bank/credit-engine/pull/77",
-                    "pr_number": 77,
-                    "repo": "acme-bank/credit-engine",
-                    "head_sha": "deadbeef77",
+            result = await pipeline.ainvoke(
+                {"raw_input": {"pr_url": "https://github.com/acme-bank/credit-engine/pull/77"}}
+            )
+            summary = mock_gh.print_summary()
+
+            report = result["findings_report"]
+            deliverable = result["deliverable_result"]
+
+            self.assertEqual(report.source_type, "pr_review")
+            self.assertEqual(report.units_total, 3)
+            self.assertEqual(report.units_triaged_in, 2)
+            self.assertEqual(report.units_skipped, 1)  # button.css skipped
+            self.assertEqual(report.overall_verdict, "non_compliant")
+            self.assertEqual(len(report.findings), 2)
+            self.assertEqual([f.finding_id for f in report.findings], ["F-001", "F-002"])
+
+            for finding in report.findings:
+                self.assertTrue(finding.fca_citations, f"Missing FCA citations on {finding.title}")
+                self.assertTrue(finding.cca_citations, f"Missing CCA citations on {finding.title}")
+                self.assertTrue(finding.fca_vs_cca_comparison)
+
+            self.assertEqual(deliverable.module_name, "pr_review")
+            self.assertEqual(deliverable.status, "completed")
+            self.assertTrue(deliverable.metadata["posted_to_github"])
+            self.assertEqual(len(mock_gh.posted_comments), 1)
+            self.assertTrue(Path(mock_gh.posted_comments[0]["body_path"]).is_file())
+            self.assertIn("Comments: 1", summary)
+
+            self.assertNotIn("triaged_units", result)
+            self.assertNotIn("unit_findings", result)
+
+    async def test_codebase_review_real_outbound_remediator_with_mock_github_api(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(
+                output_dir=tmp_path / "mock_github",
+                repo_files={
+                    "lending/collections/default_notice.py": "default_notice_days = 5\n",
+                    "lending/marketing/banner.py": "hide_apr = True\n",
+                    "static/theme.css": "body { color: black; }\n",
+                },
+            )
+            pipeline = build_pipeline_for_module(
+                build_github_codebase_review_module(
+                    remediator=_DeterministicCodeRemediator(),
+                    github_client=mock_gh,
+                    reports_dir=tmp_path / "reports",
+                ),
+                core_subgraph=_build_test_core(),
+            )
+
+            result = await pipeline.ainvoke(
+                {
+                    "raw_input": {
+                        "repo_url": "https://github.com/acme-bank/retail-lending",
+                        "default_branch": "main",
+                    }
                 }
-            }
-        )
+            )
+            summary = mock_gh.print_summary()
 
-        report = result["findings_report"]
-        deliverable = result["deliverable_result"]
+            report = result["findings_report"]
+            deliverable = result["deliverable_result"]
 
-        self.assertEqual(report.source_type, "pr_review")
-        self.assertEqual(report.units_total, 3)
-        self.assertEqual(report.units_triaged_in, 2)
-        self.assertEqual(report.units_skipped, 1)  # button.css skipped
-        self.assertEqual(report.overall_verdict, "non_compliant")
-        self.assertEqual(len(report.findings), 2)
-        self.assertEqual([f.finding_id for f in report.findings], ["F-001", "F-002"])
+            self.assertEqual(report.source_type, "codebase")
+            self.assertEqual(report.units_total, 3)
+            self.assertEqual(report.units_skipped, 1)  # theme.css skipped
+            self.assertEqual(report.overall_verdict, "non_compliant")
+            self.assertEqual(len(report.findings), 2)
 
-        for finding in report.findings:
-            self.assertTrue(finding.fca_citations, f"Missing FCA citations on {finding.title}")
-            self.assertTrue(finding.cca_citations, f"Missing CCA citations on {finding.title}")
-            self.assertTrue(finding.fca_vs_cca_comparison)
-
-        self.assertEqual(deliverable.module_name, "pr_review")
-        self.assertEqual(deliverable.status, "completed")
-        self.assertEqual(deliverable.metadata["head_sha"], "deadbeef77")
-        self.assertEqual(len(deliverable.metadata["pr_comments"]), 2)
-
-        self.assertNotIn("triaged_units", result)
-        self.assertNotIn("unit_findings", result)
-
-    async def test_codebase_review_agentic_outbound_subgraph(self) -> None:
-        pipeline = build_pipeline_for_module(
-            build_codebase_review_module(),
-            core_subgraph=_build_test_core(),
-        )
-
-        result = await pipeline.ainvoke(
-            {
-                "raw_input": {
-                    "repo_url": "https://github.com/acme-bank/retail-lending",
-                    "default_branch": "main",
-                    "workspace_path": "/tmp/test-clone/retail-lending",
-                }
-            }
-        )
-
-        report = result["findings_report"]
-        deliverable = result["deliverable_result"]
-
-        self.assertEqual(report.source_type, "codebase")
-        self.assertEqual(report.units_total, 3)
-        self.assertEqual(report.units_skipped, 1)  # theme.css skipped
-        self.assertEqual(report.overall_verdict, "non_compliant")
-        self.assertEqual(len(report.findings), 2)
-
-        self.assertEqual(deliverable.module_name, "codebase_review")
-        self.assertEqual(deliverable.status, "completed")
-        self.assertEqual(
-            deliverable.metadata["workspace_path"], "/tmp/test-clone/retail-lending"
-        )
-        self.assertEqual(
-            set(deliverable.metadata["edited_files"]),
-            {"lending/collections/default_notice.py", "lending/marketing/banner.py"},
-        )
-        self.assertNotIn("planned_edits", result)
-        self.assertNotIn("applied_files", result)
+            self.assertEqual(deliverable.module_name, "codebase_review")
+            self.assertEqual(deliverable.status, "completed")
+            self.assertTrue(deliverable.metadata["pr_created"])
+            self.assertEqual(
+                set(deliverable.metadata["edited_files"]),
+                {"lending/collections/default_notice.py", "lending/marketing/banner.py"},
+            )
+            self.assertEqual(len(mock_gh.created_prs), 1)
+            self.assertTrue(Path(mock_gh.created_prs[0]["body_path"]).is_file())
+            self.assertEqual(
+                mock_gh.commits[0]["written_files"]["lending/collections/default_notice.py"].strip(),
+                "default_notice_days = 14",
+            )
+            self.assertIn("PRs:      1", summary)
 
     async def test_product_spec_module_end_to_end(self) -> None:
         pipeline = build_pipeline_for_module(
@@ -255,77 +353,93 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(deliverable.artifacts, ["reports/bnpl_v2_findings.pdf"])
 
     async def test_zero_relevant_units_short_circuits_cleanly(self) -> None:
-        pipeline = build_pipeline_for_module(
-            build_pr_review_module(),
-            core_subgraph=_build_test_core(),
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(
+                output_dir=tmp_path / "mock_github",
+                pr_diff=_CSS_ONLY_PR_DIFF,
+            )
+            pipeline = build_pipeline_for_module(
+                build_github_pr_review_module(
+                    github_client=mock_gh,
+                    reports_dir=tmp_path / "reports",
+                ),
+                core_subgraph=_build_test_core(),
+            )
 
-        result = await pipeline.ainvoke(
-            {
-                "raw_input": {
-                    "pr_url": "https://github.com/acme-bank/credit-engine/pull/88",
-                    "units": [
-                        AnalysisUnit(
-                            unit_id="css-only",
-                            title="static/theme.css",
-                            content="body { margin: 0; }",
-                            location=PullRequestDiffLocation(file_path="static/theme.css"),
-                        )
-                    ],
-                }
-            }
-        )
+            result = await pipeline.ainvoke(
+                {"raw_input": {"pr_url": "https://github.com/acme-bank/credit-engine/pull/88"}}
+            )
 
-        report = result["findings_report"]
-        self.assertEqual(report.overall_verdict, "compliant")
-        self.assertEqual(report.findings, [])
-        self.assertEqual(report.units_triaged_in, 0)
-        self.assertEqual(report.units_skipped, 1)
+            report = result["findings_report"]
+            self.assertEqual(report.overall_verdict, "compliant")
+            self.assertEqual(report.findings, [])
+            self.assertEqual(report.units_triaged_in, 0)
+            self.assertEqual(report.units_skipped, 1)
 
     async def test_hitl_gate_filter_and_reject(self) -> None:
-        checkpointer = InMemorySaver()
-        pipeline = build_pipeline_for_module(
-            build_pr_review_module(),
-            core_subgraph=_build_test_core(),
-            checkpointer=checkpointer,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(
+                output_dir=tmp_path / "mock_github",
+                pr_diff=_SAMPLE_PR_DIFF,
+            )
+            checkpointer = InMemorySaver()
+            pipeline = build_pipeline_for_module(
+                build_github_pr_review_module(
+                    github_client=mock_gh,
+                    reports_dir=tmp_path / "reports",
+                ),
+                core_subgraph=_build_test_core(),
+                checkpointer=checkpointer,
+            )
 
-        cfg_filter = {"configurable": {"thread_id": "thread-filter-1"}}
-        paused = await pipeline.ainvoke(
-            {"raw_input": {"pr_number": 101}, "require_human_approval": True},
-            config=cfg_filter,
-        )
-        self.assertIn("__interrupt__", paused)
-        self.assertNotIn("deliverable_result", paused)
+            cfg_filter = {"configurable": {"thread_id": "thread-filter-1"}}
+            paused = await pipeline.ainvoke(
+                {
+                    "raw_input": {"repo": "acme-bank/credit-engine", "pr_number": 101},
+                    "require_human_approval": True,
+                },
+                config=cfg_filter,
+            )
+            self.assertIn("__interrupt__", paused)
+            self.assertNotIn("deliverable_result", paused)
+            self.assertEqual(mock_gh.posted_comments, [])
 
-        resumed = await pipeline.ainvoke(
-            Command(
-                resume={
-                    "action": "filter",
-                    "approved_finding_ids": ["F-001"],
-                    "reviewer_notes": "Only escalate F-001 on this PR.",
-                }
-            ),
-            config=cfg_filter,
-        )
-        self.assertEqual(len(resumed["findings_report"].findings), 1)
-        self.assertEqual(resumed["findings_report"].findings[0].finding_id, "F-001")
-        self.assertEqual(resumed["deliverable_result"].status, "completed")
-        self.assertEqual(len(resumed["deliverable_result"].metadata["pr_comments"]), 1)
+            resumed = await pipeline.ainvoke(
+                Command(
+                    resume={
+                        "action": "filter",
+                        "approved_finding_ids": ["F-001"],
+                        "reviewer_notes": "Only escalate F-001 on this PR.",
+                    }
+                ),
+                config=cfg_filter,
+            )
+            self.assertEqual(len(resumed["findings_report"].findings), 1)
+            self.assertEqual(resumed["findings_report"].findings[0].finding_id, "F-001")
+            self.assertEqual(resumed["deliverable_result"].status, "completed")
+            self.assertTrue(resumed["deliverable_result"].metadata["posted_to_github"])
+            self.assertEqual(len(mock_gh.posted_comments), 1)
+            self.assertIn("**Findings:** 1", mock_gh.posted_comments[0]["body"])
 
-        cfg_reject = {"configurable": {"thread_id": "thread-reject-1"}}
-        paused_reject = await pipeline.ainvoke(
-            {"raw_input": {"pr_number": 102}, "require_human_approval": True},
-            config=cfg_reject,
-        )
-        self.assertIn("__interrupt__", paused_reject)
+            cfg_reject = {"configurable": {"thread_id": "thread-reject-1"}}
+            paused_reject = await pipeline.ainvoke(
+                {
+                    "raw_input": {"repo": "acme-bank/credit-engine", "pr_number": 102},
+                    "require_human_approval": True,
+                },
+                config=cfg_reject,
+            )
+            self.assertIn("__interrupt__", paused_reject)
 
-        aborted = await pipeline.ainvoke(
-            Command(resume={"action": "reject", "reviewer_notes": "Already tracked elsewhere"}),
-            config=cfg_reject,
-        )
-        self.assertEqual(aborted["deliverable_result"].status, "aborted_by_reviewer")
-        self.assertEqual(aborted["deliverable_result"].module_name, "human_review_gate")
+            aborted = await pipeline.ainvoke(
+                Command(resume={"action": "reject", "reviewer_notes": "Already tracked elsewhere"}),
+                config=cfg_reject,
+            )
+            self.assertEqual(aborted["deliverable_result"].status, "aborted_by_reviewer")
+            self.assertEqual(aborted["deliverable_result"].module_name, "human_review_gate")
+            self.assertEqual(len(mock_gh.posted_comments), 1)  # still only the approved PR #101 comment
 
     async def test_mcp_adapters_plug_into_core_subgraph(self) -> None:
         calls: list[tuple[str, dict[str, Any]]] = []
@@ -373,36 +487,38 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        core = build_core_analysis_subgraph(
-            fca_port=fca_mcp,
-            cca_port=cca_mcp,
-            analyzer_port=_FakeComplianceAnalyzer(),
-        )
-        pipeline = build_pipeline_for_module(build_pr_review_module(), core_subgraph=core)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(
+                output_dir=tmp_path / "mock_github",
+                pr_diff=_SINGLE_FILE_PR_DIFF,
+            )
+            core = build_core_analysis_subgraph(
+                fca_port=fca_mcp,
+                cca_port=cca_mcp,
+                analyzer_port=_FakeComplianceAnalyzer(),
+            )
+            pipeline = build_pipeline_for_module(
+                build_github_pr_review_module(
+                    github_client=mock_gh,
+                    reports_dir=tmp_path / "reports",
+                ),
+                core_subgraph=core,
+            )
 
-        result = await pipeline.ainvoke(
-            {
-                "raw_input": {
-                    "units": [
-                        AnalysisUnit(
-                            unit_id="u-1",
-                            title="withdrawal.py",
-                            content="withdrawal_days = 7",
-                            location=PullRequestDiffLocation(file_path="withdrawal.py", end_line=1),
-                        )
-                    ]
-                }
-            }
-        )
+            result = await pipeline.ainvoke(
+                {"raw_input": {"pr_url": "https://github.com/acme-bank/credit-engine/pull/99"}}
+            )
 
-        report = result["findings_report"]
-        self.assertEqual(len(report.findings), 1)
-        self.assertEqual(report.findings[0].fca_citations[0].reference, "CONC 4.2.5R")
-        self.assertEqual(report.findings[0].cca_citations[0].reference, "CCA 1974 s.66A")
-        called_tools = {name for name, _ in calls}
-        self.assertIn("fca_rag_query", called_tools)
-        self.assertIn("cca_lookup", called_tools)
-        self.assertIn("cca_get_section", called_tools)
+            report = result["findings_report"]
+            self.assertEqual(len(report.findings), 1)
+            self.assertEqual(report.findings[0].fca_citations[0].reference, "CONC 4.2.5R")
+            self.assertEqual(report.findings[0].cca_citations[0].reference, "CCA 1974 s.66A")
+            called_tools = {name for name, _ in calls}
+            self.assertIn("fca_rag_query", called_tools)
+            self.assertIn("cca_lookup", called_tools)
+            self.assertIn("cca_get_section", called_tools)
+            self.assertEqual(len(mock_gh.posted_comments), 1)
 
 
 class TestHexagonalArchitectureBoundaries(unittest.TestCase):

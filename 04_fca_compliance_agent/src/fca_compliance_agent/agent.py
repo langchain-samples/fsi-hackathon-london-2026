@@ -1,15 +1,18 @@
 """Composition root exposing ready-to-run compliance pipelines for all 3 context modules.
 
 Uses `LangChainComplianceAnalyzer` (configured via the repo root `.env`) by default.
-Regulatory tools default to the in-memory mock FCA/CCA adapters until external MCP
-servers are configured via environment variables:
-  - `FCA_MCP_URL=http://...` -> uses `MCPFCAHandbookAdapter` over Streamable HTTP
+Regulatory tools default to real implementations wherever available:
   - `CCA_MCP_URL=http://...` -> uses `MCPConsumerCreditActAdapter` over Streamable HTTP
+  - otherwise, when the `mcp` extra is installed -> spawns the local `fca-regulatory-mcp`
+    server over stdio (backed by the real Consumer Credit Act text in `cca.md`)
+  - `FCA_MCP_URL=http://...` -> uses `MCPFCAHandbookAdapter` over Streamable HTTP
+  - otherwise -> uses `MockFCAHandbookAdapter` (until the live FCA Handbook RAG corpus lands)
 """
 
 from __future__ import annotations
 
 import os
+import sys
 
 from .adapters.github_codebase import build_github_codebase_review_module
 from .adapters.github_pr import build_github_pr_review_module
@@ -26,7 +29,16 @@ from .adapters.regulatory import (
     MockFCAHandbookAdapter,
 )
 from .core import build_core_analysis_subgraph, build_pipeline_for_module
+from .mcp_server.bootstrap import is_mcp_installed
 from .ports import ComplianceAnalyzerPort, ConsumerCreditActPort, FCAHandbookPort
+
+
+def _default_stdio_mcp_config() -> MCPServerConfig:
+    return MCPServerConfig(
+        transport="stdio",
+        command=sys.executable,
+        args=("-m", "fca_compliance_agent.mcp_server.server"),
+    )
 
 
 def build_default_core_subgraph(
@@ -50,13 +62,14 @@ def build_default_core_subgraph(
 
     if cca_port is None:
         cca_url = os.environ.get("CCA_MCP_URL")
-        cca_port = (
-            MCPConsumerCreditActAdapter(
+        if cca_url:
+            cca_port = MCPConsumerCreditActAdapter(
                 server_config=MCPServerConfig(transport="streamable_http", url=cca_url)
             )
-            if cca_url
-            else MockConsumerCreditActAdapter()
-        )
+        elif is_mcp_installed():
+            cca_port = MCPConsumerCreditActAdapter(server_config=_default_stdio_mcp_config())
+        else:
+            cca_port = MockConsumerCreditActAdapter()
 
     if analyzer_port is None:
         analyzer_port = LangChainComplianceAnalyzer()

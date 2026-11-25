@@ -1,14 +1,15 @@
-"""Tests for the real GitHub PR inbound/outbound adapters (no network: `gh` is patched)."""
+"""Tests for the real GitHub PR inbound/outbound behaviour adapters using `LocalMockGitHubClient`."""
 
 from __future__ import annotations
 
-import json
+import contextlib
+import io
+import tempfile
 import unittest
-from unittest import mock
+from pathlib import Path
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
-
 from test_pipeline import _FakeComplianceAnalyzer
 
 from fca_compliance_agent import (
@@ -17,8 +18,8 @@ from fca_compliance_agent import (
     build_core_analysis_subgraph,
     build_pipeline_for_module,
 )
-from fca_compliance_agent.adapters import github_pr
 from fca_compliance_agent.adapters.github_pr import build_github_pr_review_module, split_diff
+from fca_compliance_agent.adapters.outbound.github_client import LocalMockGitHubClient
 
 DIFF = """diff --git a/src/contracts/withdrawal.py b/src/contracts/withdrawal.py
 index 1111111..2222222 100644
@@ -39,13 +40,17 @@ index 3333333..4444444 100644
 """
 
 
-def _pipeline(checkpointer=None):
+def _pipeline(*, github_client: LocalMockGitHubClient, reports_dir: Path, checkpointer=None):
     core = build_core_analysis_subgraph(
         fca_port=MockFCAHandbookAdapter(),
         cca_port=MockConsumerCreditActAdapter(),
         analyzer_port=_FakeComplianceAnalyzer(),
     )
-    return build_pipeline_for_module(build_github_pr_review_module(), core_subgraph=core, checkpointer=checkpointer)
+    return build_pipeline_for_module(
+        build_github_pr_review_module(github_client=github_client, reports_dir=reports_dir),
+        core_subgraph=core,
+        checkpointer=checkpointer,
+    )
 
 
 class SplitDiffTest(unittest.TestCase):
@@ -56,49 +61,117 @@ class SplitDiffTest(unittest.TestCase):
 
 
 class GithubPrAdapterTest(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
-        self.gh = mock.patch.object(github_pr, "_gh").start()
-        self.addCleanup(mock.patch.stopall)
-
     async def test_raw_diff_writes_local_report_and_never_calls_github(self) -> None:
-        out = await _pipeline().ainvoke({"raw_input": {"diff": DIFF, "title": "Shorten cooling-off"}})
-        result = out["deliverable_result"]
-        self.assertEqual(result.status, "completed")
-        self.assertFalse(result.metadata["posted_to_github"])
-        self.assertTrue(result.artifacts[0].endswith(".md"))
-        self.gh.assert_not_called()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(output_dir=tmp_path / "mock_github", pr_diff=DIFF)
+            out = await _pipeline(github_client=mock_gh, reports_dir=tmp_path / "reports").ainvoke(
+                {"raw_input": {"diff": DIFF, "title": "Shorten cooling-off"}}
+            )
+            result = out["deliverable_result"]
+            self.assertEqual(result.status, "completed")
+            self.assertFalse(result.metadata["posted_to_github"])
+            self.assertTrue(result.artifacts[0].endswith(".md"))
+            self.assertEqual(mock_gh.viewed_prs, [])
+            self.assertEqual(mock_gh.diffed_prs, [])
+            self.assertEqual(mock_gh.posted_comments, [])
 
-    async def test_pr_url_reads_pr_with_gh(self) -> None:
-        self.gh.side_effect = [json.dumps({"title": "T", "body": "B", "url": "u", "headRefOid": "abc"}), DIFF]
-        out = await _pipeline().ainvoke({"raw_input": {"pr_url": "https://github.com/acme/credit/pull/7"}})
-        self.assertEqual(out["analysis_input"].target_id, "acme/credit#7")
-        self.assertEqual(self.gh.call_args_list[1].args, ("pr", "diff", "7", "--repo", "acme/credit"))
+    async def test_pr_url_reads_pr_and_posts_comment_to_disk_and_stdout_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(
+                output_dir=tmp_path / "mock_github",
+                pr_meta={"title": "T", "body": "B", "headRefOid": "abc"},
+                pr_diff=DIFF,
+            )
+            stdout_buf = io.StringIO()
+            with contextlib.redirect_stdout(stdout_buf):
+                out = await _pipeline(github_client=mock_gh, reports_dir=tmp_path / "reports").ainvoke(
+                    {"raw_input": {"pr_url": "https://github.com/acme/credit/pull/7"}}
+                )
+                mock_gh.print_summary()
+
+            stdout_text = stdout_buf.getvalue()
+            self.assertEqual(out["analysis_input"].target_id, "acme/credit#7")
+            self.assertEqual(mock_gh.viewed_prs, [("acme/credit", 7)])
+            self.assertEqual(mock_gh.diffed_prs, [("acme/credit", 7)])
+            self.assertTrue(out["deliverable_result"].metadata["posted_to_github"])
+            self.assertEqual(len(mock_gh.posted_comments), 1)
+            comment = mock_gh.posted_comments[0]
+            self.assertEqual(comment["comment_url"], "https://github.com/acme/credit/pull/7#issuecomment-1")
+            self.assertIn(comment["comment_url"], out["deliverable_result"].artifacts)
+            self.assertTrue(Path(comment["body_path"]).is_file())
+            self.assertTrue(Path(comment["meta_path"]).is_file())
+            self.assertIn("[MockGitHubAPI] Posted PR comment", stdout_text)
+            self.assertIn("[MockGitHubAPI Summary]", stdout_text)
 
     async def test_bad_pr_url_rejected(self) -> None:
-        with self.assertRaises(ValueError):
-            await _pipeline().ainvoke({"raw_input": {"pr_url": "https://evil.example/acme/credit/pull/7; rm -rf /"}})
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(output_dir=tmp_path / "mock_github")
+            with self.assertRaises(ValueError):
+                await _pipeline(github_client=mock_gh, reports_dir=tmp_path / "reports").ainvoke(
+                    {"raw_input": {"pr_url": "https://evil.example/acme/credit/pull/7; rm -rf /"}}
+                )
 
-    async def test_post_requested_without_human_gate_is_refused(self) -> None:
-        self.gh.side_effect = [json.dumps({"title": "T", "body": "", "url": "u", "headRefOid": "a"}), DIFF]
-        out = await _pipeline().ainvoke(
-            {"raw_input": {"repo": "acme/credit", "pr_number": 7, "post_to_github": True}}
-        )
-        self.assertFalse(out["deliverable_result"].metadata["posted_to_github"])
-        self.assertEqual(self.gh.call_count, 2)  # view + diff only, no comment
+    async def test_post_to_github_false_saves_locally_without_commenting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(
+                output_dir=tmp_path / "mock_github",
+                pr_meta={"title": "T", "body": "", "headRefOid": "a"},
+                pr_diff=DIFF,
+            )
+            out = await _pipeline(github_client=mock_gh, reports_dir=tmp_path / "reports").ainvoke(
+                {"raw_input": {"repo": "acme/credit", "pr_number": 7, "post_to_github": False}}
+            )
+            self.assertFalse(out["deliverable_result"].metadata["posted_to_github"])
+            self.assertEqual(mock_gh.viewed_prs, [("acme/credit", 7)])
+            self.assertEqual(mock_gh.diffed_prs, [("acme/credit", 7)])
+            self.assertEqual(mock_gh.posted_comments, [])
 
     async def test_post_after_human_approval(self) -> None:
-        self.gh.side_effect = [
-            json.dumps({"title": "T", "body": "", "url": "u", "headRefOid": "a"}),
-            DIFF,
-            "https://github.com/acme/credit/pull/7#issuecomment-1\n",
-        ]
-        graph = _pipeline(checkpointer=InMemorySaver())
-        cfg = {"configurable": {"thread_id": "t1"}}
-        raw = {"repo": "acme/credit", "pr_number": 7, "post_to_github": True}
-        await graph.ainvoke({"raw_input": raw, "require_human_approval": True}, cfg)
-        out = await graph.ainvoke(Command(resume={"action": "approve"}), cfg)
-        self.assertTrue(out["deliverable_result"].metadata["posted_to_github"])
-        self.assertEqual(self.gh.call_args_list[2].args[:3], ("pr", "comment", "7"))
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(
+                output_dir=tmp_path / "mock_github",
+                pr_meta={"title": "T", "body": "", "headRefOid": "a"},
+                pr_diff=DIFF,
+            )
+            graph = _pipeline(
+                github_client=mock_gh,
+                reports_dir=tmp_path / "reports",
+                checkpointer=InMemorySaver(),
+            )
+            cfg = {"configurable": {"thread_id": "t1"}}
+            raw = {"repo": "acme/credit", "pr_number": 7}
+            await graph.ainvoke({"raw_input": raw, "require_human_approval": True}, cfg)
+            self.assertEqual(mock_gh.posted_comments, [])
+
+            out = await graph.ainvoke(Command(resume={"action": "approve"}), cfg)
+            self.assertTrue(out["deliverable_result"].metadata["posted_to_github"])
+            self.assertEqual(len(mock_gh.posted_comments), 1)
+            self.assertTrue(Path(mock_gh.posted_comments[0]["body_path"]).is_file())
+
+    async def test_hitl_reject_aborts_without_posting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mock_gh = LocalMockGitHubClient(
+                output_dir=tmp_path / "mock_github",
+                pr_meta={"title": "T", "body": "", "headRefOid": "a"},
+                pr_diff=DIFF,
+            )
+            graph = _pipeline(
+                github_client=mock_gh,
+                reports_dir=tmp_path / "reports",
+                checkpointer=InMemorySaver(),
+            )
+            cfg = {"configurable": {"thread_id": "t-reject"}}
+            raw = {"repo": "acme/credit", "pr_number": 7}
+            await graph.ainvoke({"raw_input": raw, "require_human_approval": True}, cfg)
+            out = await graph.ainvoke(Command(resume={"action": "reject"}), cfg)
+            self.assertEqual(out["deliverable_result"].status, "aborted_by_reviewer")
+            self.assertEqual(mock_gh.posted_comments, [])
 
 
 if __name__ == "__main__":

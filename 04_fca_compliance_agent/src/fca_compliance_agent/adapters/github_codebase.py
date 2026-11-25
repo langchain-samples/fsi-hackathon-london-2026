@@ -1,33 +1,34 @@
-"""Real Inbound & Outbound adapters for the Codebase Review module (GitHub repo or local directory).
+"""Codebase Review module wiring (Inbound repository scanner + Outbound code remediation agent).
 
 Inbound  `raw_input` -> `analysis_input` (one AnalysisUnit per source/config file) + `adapter_context`
-    {"repo_url": "https://github.com/owner/repo", "default_branch": "main"}   shallow-clone via `git`
+    {"repo_url": "https://github.com/owner/repo", "default_branch": "main"}   shallow-clone via `GitHubClient`
     {"repo": "owner/repo", "default_branch": "main"}                          same, without full URL
     {"workspace_path": "/path/to/local/repo"}                                 offline / pre-cloned dir
 
-Outbound `findings_report` -> markdown + JSON review in `04_fca_compliance_agent/reports/`.
+Outbound `findings_report` -> handled by `adapters/outbound/code_remediator.py` (which uses
+    `adapters/outbound/github_client.py` to branch, commit, push, and open a remediation PR).
 """
 
 from __future__ import annotations
 
 import re
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
-from ..domain.models import (
-    AnalysisInput,
-    AnalysisUnit,
-    CodeLocation,
-    DeliverableResult,
-    FindingsReport,
-    PullRequestDiffLocation,
-)
+from ..domain.models import AnalysisInput, AnalysisUnit, CodeLocation
 from ..domain.state import PipelineState
 from ..ports.adapters import ContextModule
-
-REPORTS_DIR = Path(__file__).resolve().parents[3] / "reports"  # 04_fca_compliance_agent/reports
+from .outbound.code_remediator import (
+    REPORTS_DIR,
+    CodeRemediator,
+    FileRemediationResult,
+    LangChainCodeRemediator,
+    make_code_remediation_outbound,
+    render_codebase_markdown,
+    render_remediation_pr_body,
+)
+from .outbound.github_client import GitHubCLIAdapter, GitHubClient, run_gh, run_git
 
 _REPO_URL = re.compile(r"^https://github\.com/([\w.-]+/[\w.-]+?)(?:\.git)?/?$")
 _REPO = re.compile(r"^[\w.-]+/[\w.-]+$")
@@ -74,13 +75,9 @@ _CONFIG_EXTS = frozenset({".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".t
 MAX_FILE_CHARS = 12_000
 MAX_FILES = 100
 
-
-def _git(*args: str) -> str:
-    """Run `git` with list args (no shell, preventing command injection)."""
-    done = subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8", timeout=120)
-    if done.returncode != 0:
-        raise RuntimeError(f"git {args[0]} failed: {done.stderr.strip()[:300]}")
-    return done.stdout
+# Module-level aliases preserved for convenience/testing.
+_git = run_git
+_gh = run_gh
 
 
 def _resolve_repo(raw: dict[str, Any]) -> tuple[str, str, str]:
@@ -103,6 +100,17 @@ def _resolve_repo(raw: dict[str, Any]) -> tuple[str, str, str]:
             "or 'repo' (owner/name)."
         )
     return repo, f"https://github.com/{repo}", branch
+
+
+def _resolve_optional_repo(raw: dict[str, Any]) -> tuple[str | None, str | None, str]:
+    """Resolve optional GitHub repo metadata when `workspace_path` is provided."""
+    branch = str(raw.get("default_branch") or "main").strip()
+    if not _BRANCH.match(branch) or ".." in branch or branch.startswith("-"):
+        raise ValueError(f"Invalid branch name: {branch!r}")
+    if raw.get("repo_url") or raw.get("repo"):
+        slug, repo_url, branch = _resolve_repo(raw)
+        return slug, repo_url, branch
+    return None, None, branch
 
 
 def _is_binary(path: Path) -> bool:
@@ -162,123 +170,96 @@ def collect_codebase_units(repo_dir: Path) -> tuple[list[AnalysisUnit], str, int
     return units, readme_summary, skipped
 
 
-def github_codebase_inbound(state: PipelineState) -> dict[str, Any]:
-    """Inbound adapter: local workspace dir or GitHub repo URL -> normalised AnalysisInput."""
-    raw = state.get("raw_input") or {}
-    local_ws = raw.get("workspace_path")
-    branch = str(raw.get("default_branch") or "main").strip()
+def make_github_codebase_inbound(*, github_client: GitHubClient | None = None):
+    """Build the inbound node that scans a local directory or clones a GitHub repo."""
 
-    if local_ws and Path(str(local_ws)).is_dir():
-        repo_dir = Path(str(local_ws)).resolve()
-        repo_url = str(raw.get("repo_url") or str(repo_dir))
-        units, readme_summary, skipped = collect_codebase_units(repo_dir)
-        cloned = False
-        workspace_label = str(repo_dir)
-    else:
-        slug, repo_url, branch = _resolve_repo(raw)
-        with tempfile.TemporaryDirectory(prefix="fca-codebase-") as tmpdir:
-            clone_dir = Path(tmpdir) / "repo"
-            _git("clone", "--depth", "1", "--branch", branch, f"{repo_url}.git", str(clone_dir))
-            units, readme_summary, skipped = collect_codebase_units(clone_dir)
-        cloned = True
-        workspace_label = f"ephemeral:{slug}@{branch}"
+    def github_codebase_inbound(state: PipelineState) -> dict[str, Any]:
+        raw = state.get("raw_input") or {}
+        local_ws = raw.get("workspace_path")
 
-    summary = str(raw.get("summary") or readme_summary or f"Codebase compliance review of {repo_url} ({branch}).")
-    analysis_input = AnalysisInput(
-        target_id=repo_url,
-        source_type="codebase",
-        title=str(raw.get("title") or f"Codebase compliance scan: {repo_url} ({branch})"),
-        summary=summary[:2000],
-        units=units,
-    )
-    return {
-        "analysis_input": analysis_input,
-        "adapter_context": {
-            "repo_url": repo_url,
-            "default_branch": branch,
-            "workspace_path": workspace_label,
-            "cloned_remotely": cloned,
-            "files_skipped": skipped,
-        },
-    }
-
-
-def render_codebase_markdown(report: FindingsReport) -> str:
-    lines = [
-        f"## FCA / CCA codebase compliance review: {report.title}",
-        "",
-        f"**Verdict:** `{report.overall_verdict}` · **Findings:** {len(report.findings)} · "
-        f"**Files reviewed:** {report.units_triaged_in}/{report.units_total}",
-        "",
-        report.executive_summary,
-        "",
-    ]
-    for f in report.findings:
-        loc = f.location
-        if isinstance(loc, (CodeLocation, PullRequestDiffLocation)):
-            where = f"`{loc.file_path}` L{loc.start_line}-{loc.end_line}"
+        if local_ws and Path(str(local_ws)).is_dir():
+            repo_dir = Path(str(local_ws)).resolve()
+            slug, parsed_url, branch = _resolve_optional_repo(raw)
+            repo_url = parsed_url or str(repo_dir)
+            units, readme_summary, skipped = collect_codebase_units(repo_dir)
+            cloned = False
+            workspace_label = str(repo_dir)
+            default_create_pr = False
         else:
-            where = ""
-        refs = [c.reference for c in f.fca_citations + f.cca_citations]
-        lines += [
-            f"### [{f.severity.upper()}] {f.title}",
-            f"{where} · status `{f.status}` · confidence {f.confidence:.0%}",
-            "",
-            f.description,
-            "",
-            f"- **Rules:** {', '.join(refs) or 'none cited'}",
-            f"- **Fix:** {f.remediation_guidance}",
-        ]
-        if f.suggested_change:
-            lines += ["", "```", f.suggested_change, "```"]
-        lines.append("")
-    lines.append("_Automated AI review. Not legal, compliance or regulatory advice; a human must confirm._")
-    return "\n".join(lines)
+            slug, repo_url, branch = _resolve_repo(raw)
+            gh_client = github_client or GitHubCLIAdapter(git_runner=_git, gh_runner=_gh)
+            with tempfile.TemporaryDirectory(prefix="fca-codebase-") as tmpdir:
+                clone_dir = Path(tmpdir) / "repo"
+                gh_client.clone_repo(repo_url, branch, clone_dir)
+                units, readme_summary, skipped = collect_codebase_units(clone_dir)
+            cloned = True
+            workspace_label = f"ephemeral:{slug}@{branch}"
+            default_create_pr = True
 
-
-def github_codebase_outbound(state: PipelineState) -> dict[str, Any]:
-    """Outbound adapter: write markdown + JSON compliance report to `reports/`."""
-    report = state["findings_report"]
-    ctx = state.get("adapter_context") or {}
-    REPORTS_DIR.mkdir(exist_ok=True)
-    md_path = REPORTS_DIR / f"{report.report_id}.md"
-    json_path = REPORTS_DIR / f"{report.report_id}.json"
-
-    md_path.write_text(render_codebase_markdown(report), encoding="utf-8")
-    json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
-    artifacts = [str(md_path), str(json_path)]
-    files_with_findings = list(
-        dict.fromkeys(
-            getattr(f.location, "file_path", "")
-            for f in report.findings
-            if getattr(f.location, "file_path", "")
+        create_pr = bool(raw.get("create_pr", default_create_pr))
+        draft_pr = bool(raw.get("draft_pr", False))
+        summary = str(raw.get("summary") or readme_summary or f"Codebase compliance review of {repo_url} ({branch}).")
+        analysis_input = AnalysisInput(
+            target_id=repo_url,
+            source_type="codebase",
+            title=str(raw.get("title") or f"Codebase compliance scan: {repo_url} ({branch})"),
+            summary=summary[:2000],
+            units=units,
         )
-    )
-
-    return {
-        "deliverable_result": DeliverableResult(
-            module_name="codebase_review",
-            status="completed",
-            summary=(
-                f"{report.overall_verdict}: {len(report.findings)} finding(s) across "
-                f"{len(files_with_findings)} file(s) for {report.target_id}. Saved local report."
-            ),
-            artifacts=artifacts,
-            metadata={
-                "repo_url": ctx.get("repo_url"),
-                "default_branch": ctx.get("default_branch"),
-                "cloned_remotely": ctx.get("cloned_remotely", False),
-                "files_with_findings": files_with_findings,
-                "severity_counts": report.severity_counts(),
+        return {
+            "analysis_input": analysis_input,
+            "adapter_context": {
+                "repo_slug": slug,
+                "repo_url": repo_url,
+                "default_branch": branch,
+                "workspace_path": workspace_label,
+                "cloned_remotely": cloned,
+                "files_skipped": skipped,
+                "create_pr": create_pr,
+                "draft_pr": draft_pr,
+                "summary": summary[:2000],
             },
-        )
-    }
+        }
+
+    return github_codebase_inbound
 
 
-def build_github_codebase_review_module() -> ContextModule:
+github_codebase_inbound = make_github_codebase_inbound()
+github_codebase_outbound = make_code_remediation_outbound()
+
+
+def build_github_codebase_review_module(
+    *,
+    remediator: CodeRemediator | None = None,
+    github_client: GitHubClient | None = None,
+    reports_dir: Path | None = None,
+) -> ContextModule:
+    """Wire the Codebase Review inbound scanner and outbound remediation agent + GitHub adapter."""
+    client = github_client or GitHubCLIAdapter(git_runner=_git, gh_runner=_gh)
     return ContextModule(
         name="codebase_review",
-        description="GitHub repository (or local workspace) -> markdown/JSON compliance findings report",
-        inbound_node=github_codebase_inbound,
-        outbound_node=github_codebase_outbound,
+        description="GitHub repository (or local workspace) -> markdown/JSON report + code remediation PR",
+        inbound_node=make_github_codebase_inbound(github_client=client),
+        outbound_node=make_code_remediation_outbound(
+            remediator=remediator,
+            github_client=client,
+            reports_dir=reports_dir or REPORTS_DIR,
+        ),
     )
+
+
+__all__ = [
+    "CodeRemediator",
+    "FileRemediationResult",
+    "GitHubCLIAdapter",
+    "GitHubClient",
+    "LangChainCodeRemediator",
+    "REPORTS_DIR",
+    "build_github_codebase_review_module",
+    "collect_codebase_units",
+    "github_codebase_inbound",
+    "github_codebase_outbound",
+    "make_github_codebase_inbound",
+    "render_codebase_markdown",
+    "render_remediation_pr_body",
+]
