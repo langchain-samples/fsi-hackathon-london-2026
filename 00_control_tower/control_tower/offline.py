@@ -55,6 +55,20 @@ def _who(text: str) -> str:
     return next((name for name in PROFILES if name in text), "Priya Shah")
 
 
+def _investigations() -> dict:
+    """Marcus's fixture: scripted investigator reports for the 02 graph, one per transaction it may investigate."""
+    path = REPO_ROOT / "02_transaction_monitoring_agent" / "data" / "offline_investigations.jsonl"
+    return {row["transaction_id"]: row for row in map(json.loads, path.read_text(encoding="utf-8").splitlines()) if row}
+
+
+def _investigation(text: str) -> dict:
+    tx_id = re.search(r"TRANSACTION_ID: (TX-\d+)", text).group(1)
+    return _investigations().get(tx_id) or {
+        "transaction_id": tx_id, "summary": "Scripted (offline rehearsal): nothing unusual for this client.",
+        "evidence": [], "assessment": "likely_legitimate", "next_step": "close_explained", "paragraphs": ["6.1"],
+        "risk_score": 10, "confidence": 0.9}
+
+
 class ScriptedModel(BaseChatModel):
     """Answers the prompts the control tower and the three projects send, from fixtures."""
 
@@ -77,6 +91,10 @@ class ScriptedModel(BaseChatModel):
                 return schema(**FACTS[_who(text)])
             if name in ("PolicyParams", "PolicyExtraction"):
                 return PS26_7_REFERENCE.model_copy()
+            if name == "InvestigationReport":  # the 02 investigator
+                return schema(**_investigation(text))
+            if name == "AuditResult":  # the 02 auditor passes; the code fact check still runs for real
+                return schema(verdict="pass", facts_failed=[], issues=[], tipping_off=False)
             raise NotImplementedError(f"No script for {name}")
         return RunnableLambda(answer)
 

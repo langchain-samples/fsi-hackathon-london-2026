@@ -143,6 +143,44 @@
   .thresholds { display: flex; gap: 12px; flex-wrap: wrap; }
   .th { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
   .th b { font-size: 15px; } .th.changed { border-color: var(--accent); }
+  /* Transaction monitoring tab */
+  .g-tm { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; } @media (max-width: 1100px) { .g-tm { grid-template-columns: 1fr; } }
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+  .fs { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; font-size: 12px; min-width: 96px; }
+  .fs b { display: block; font-size: 12.5px; } .fs span { color: var(--quiet); font-size: 11px; }
+  .fs.code { border-top: 3px solid var(--accent); } .fs.model { border-top: 3px solid var(--reg); } .fs.person { border-top: 3px solid var(--warn); }
+  .arrow { color: var(--quiet); align-self: center; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--quiet); }
+  .legend i { display: inline-block; width: 10px; height: 3px; margin-right: 5px; vertical-align: middle; }
+  .band { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; letter-spacing: .4px; text-transform: uppercase; }
+  .b-low { background: #34d39922; color: var(--good); } .b-medium { background: #fbbf2422; color: var(--warn); } .b-high { background: #f8717122; color: var(--bad); }
+  .bar { position: relative; height: 5px; background: var(--line); border-radius: 3px; width: 84px; margin-top: 5px; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; } .bar s { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--quiet); }
+  .rule { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #60a5fa18; color: var(--accent); margin: 0 3px 3px 0; white-space: nowrap; cursor: help; }
+  .ns { font-size: 12px; font-weight: 600; } .ns-close_explained { color: var(--good); } .ns-request_information { color: var(--warn); }
+  .ns-block_and_escalate { color: var(--bad); } .ns-refer_mlro { color: #fff; background: #b91c1c; padding: 1px 6px; border-radius: 4px; }
+  .audit-pass { color: var(--good); font-weight: 600; } .audit-return { color: var(--bad); font-weight: 600; }
+  .score { font-weight: 800; font-size: 12px; padding: 4px 10px; border-radius: 6px; letter-spacing: .6px; }
+  .sc-green { background: #34d39922; color: var(--good); } .sc-amber { background: #fbbf2422; color: var(--warn); } .sc-red { background: #f8717122; color: var(--bad); box-shadow: 0 0 0 1px var(--bad) inset; }
+  tr.tx { cursor: pointer; } tr.tx:hover td, tr.tx.open td { background: var(--panel2); }
+  tr.more > td { background: #0f141b; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .more-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } @media (max-width: 1000px) { .more-grid { grid-template-columns: 1fr; } }
+  .more-grid h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--quiet); margin: 0 0 6px; font-weight: 600; }
+  .more-grid ul { margin: 0; padding-left: 18px; } .more-grid li { margin: 2px 0; }
+  .ev-ok { color: var(--good); } .ev-bad { color: var(--bad); font-weight: 700; }
+  .src { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--quiet); }
+  .preview { font-size: 10px; color: var(--quiet); border: 1px dashed var(--line); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .metric { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .metric b { display: block; font-size: 20px; line-height: 1.2; } .metric span { color: var(--quiet); font-size: 11.5px; } .metric.ok b { color: var(--good); } .metric.bad b { color: var(--bad); }
+  .rs-tabs { display: flex; gap: 6px; margin-bottom: 8px; } .rs-tabs button { background: none; border: 1px solid var(--line); color: var(--quiet); border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+  .rs-tabs button.on { border-color: var(--accent); color: var(--ink); }
+  .cut { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 0; font-size: 12px; } .cut div { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--quiet); margin: 6px 0 10px; }
+  .chips > span { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; } .chips > span.hot { border-color: var(--accent); color: var(--ink); }
+  .decide { background: var(--panel2); border: 1px solid var(--warn); border-radius: 8px; padding: 10px; margin-top: 10px; }
+  .decide .row { display: flex; gap: 8px; } .decide input { flex: 1; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+  .decide .btn { flex: none; padding: 7px 16px; }
 </style>
 </head>
 <body>
@@ -203,7 +241,14 @@
   </section>
 
   <section class="view" id="v-tm">
-    <div class="meta">Existing clients with a card account. Payments are scored by the agent with thresholds set by the client's KYC rating; uncertain ones go to a human. The analyst label is the ground truth from the data set.</div>
+    <div class="panel">
+      <h2>How a payment is decided</h2>
+      <div id="tm-flow"></div>
+    </div>
+    <div class="g-tm">
+      <div class="panel"><h2>Rule set</h2><div id="tm-rules"></div></div>
+      <div class="panel"><h2>Controls, measured</h2><div id="tm-metrics"></div></div>
+    </div>
     <div id="tm"></div>
   </section>
 
@@ -427,27 +472,132 @@ function renderCustomer(c) {
   </div>`;
 }
 
+// --- Transaction monitoring tab: rules triage in code, investigator and auditor models, a person for every alert ---
+let tmOpen = new Set((() => { try { return JSON.parse(localStorage.getItem("tmOpen") || "[]"); } catch { return []; } })());
+let ruleSetShown = "retail_cards";
+const NEXT = {close_explained: "Close, explained", request_information: "Request information", block_and_escalate: "Block and escalate", refer_mlro: "Refer to MLRO (SAR, 7.1)"};
+const bandPill = b => b ? `<span class="band b-${esc(b)}">${esc(b)}</span>` : "";
+const BAND_COLOUR = {low: "var(--good)", medium: "var(--warn)", high: "var(--bad)"};
+const scoreBar = (score, cut, band) => `<div class="bar" title="Score ${score}: medium from ${cut[0]}, high from ${cut[1]}"><i style="width:${score}%;background:${BAND_COLOUR[band]}"></i><s style="left:${cut[0]}%"></s><s style="left:${cut[1]}%"></s></div>`;
+const ruleChips = rules => rules.map(r => `<span class="rule" title="${esc(r.name)}: ${esc(r.detail)}">${esc(r.id)} ¶${esc(r.paragraph.replace("Firm rule, ", "firm, "))}</span>`).join("") || '<span class="by">none</span>';
+function toggleTx(id) { tmOpen.has(id) ? tmOpen.delete(id) : tmOpen.add(id); try { localStorage.setItem("tmOpen", JSON.stringify([...tmOpen])); } catch {} shown["#tm"] = null; poll(); }
+function showRuleSet(name) { ruleSetShown = name; shown["#tm-rules"] = null; poll(); }
+const decideTm = (id, decision) => post(`/api/action/${encodeURIComponent(id)}`, {decision, note: document.getElementById("tmnote-" + id)?.value || ""});
+
+const FLOW = [["1 Receive", "code", "replay the card stream"], ["2 Client context", "code", "KYC rating, policy, notes in date"],
+  ["3 Triage", "code", "rules engine: score and band"], ["4 Route", "code", "low → record; medium, high, sample → investigate"],
+  ["5 Investigate", "model", "explains, proposes a next step"], ["6 Audit", "model", "+ code check on every cited fact"],
+  ["7 Human review", "person", "decides every alert"], ["8 Record and alert", "code", "every block or referral is an alert (3.5)"],
+  ["9 Feedback to KYC", "code", "2 alerts in 30 days → refresh (6.5)"]];
+function renderFlow() {
+  return `<div class="flow">${FLOW.map(([t, who, s], i) => `${i ? '<span class="arrow">→</span>' : ""}<div class="fs ${who}"><b>${esc(t)}</b><span>${esc(s)}</span></div>`).join("")}</div>
+    <div class="legend"><span><i style="background:var(--accent)"></i>Code decides what is suspicious and what the policy requires</span><span><i style="background:var(--reg)"></i>Models explain and check; neither can approve or block</span><span><i style="background:var(--warn)"></i>A person decides every medium or high payment</span></div>
+    <div class="meta" style="margin-top:6px">Most payments take the short line: triaged low, recorded, never seen by a model. A report the auditor rejects goes back to the investigator at most twice, then the reviewer sees the objections.</div>`;
+}
+
+function renderRuleSets() {
+  const sets = ref.tm_rule_sets || [], rs = sets.find(s => s.rule_set === ruleSetShown) || sets[0];
+  if (!rs) return '<span class="empty">No rule sets found.</span>';
+  const p = state.policy, hrCut = p.high_risk_review_score, hrPara = p.citations.high_risk_review_score;
+  return `${sets.length > 1 ? `<div class="rs-tabs">${sets.map(s => `<button class="${s.rule_set === rs.rule_set ? "on" : ""}" onclick="showRuleSet('${esc(s.rule_set)}')">${esc(s.title)}</button>`).join("")}</div>` : `<div style="margin-bottom:4px"><b>${esc(rs.title)}</b> <span class="by">· live</span></div>`}
+    <div class="meta" style="margin-bottom:6px">${esc(rs.description)}</div>
+    <table><thead><tr><th>Rule</th><th>Fires when</th><th class="num">Weight</th><th>¶</th><th>Applies to</th></tr></thead><tbody>${rs.rules.map(r =>
+      `<tr><td><b>${esc(r.id)}</b> ${esc(r.name)}${r.runnable ? "" : ' <span class="preview">not run</span>'}</td><td class="by">${esc(r.description)}</td><td class="num">${esc(r.weight)}</td><td>${para(r.paragraph)}</td><td class="by">${r.applies_to.length > 1 ? "all clients" : "high-risk clients"}</td></tr>`).join("")}</tbody></table>
+    ${`<div class="cut"><div>Standard clients: medium from <b>30</b>, high from <b>70</b></div>
+      <div class="${hrCut !== 30 ? "hot" : ""}">High-risk clients: medium from <b>${esc(hrCut)}</b>, high from <b>70</b>${para(hrPara)}</div>
+      <div>Below-the-line sample: <b>${Math.round((rs.sample?.rate || 0) * 100)}%</b> by ID hash${rs.sample?.named?.length ? ", plus " + esc(rs.sample.named.join(", ")) : ""}</div>
+      <div>Reviewer notes valid <b>${esc(rs.review_notes?.valid_days)}</b> days ${para("6.6")}</div></div>
+      <div class="meta" style="margin-top:6px">Rules live in reviewed config (02/rules/${esc(rs.rule_set)}.yaml). Cut-offs come only from the approved policy: today <b>${esc(p.source_document)}</b>.</div>`}`;
+}
+
+function renderTmMetrics() {
+  const m = state.card_clients.map(c => c.metrics || {}).reduce((a, x) => { for (const k in x) a[k] = (a[k] || 0) + x[k]; return a; }, {});
+  if (!m.decided && !state.card_clients.some(c => c.metrics)) return '<span class="empty">Monitor a client to measure the controls.</span>';
+  const pct = (a, b) => b ? Math.round(100 * a / b) + "%" : "–";
+  const tile = (value, label, cls = "") => `<div class="metric ${cls}"><b>${value}</b><span>${label}</span></div>`;
+  return `<div class="metrics">
+    ${tile(pct(m.reached_human, m.needs_human), `Review routing: ${m.reached_human || 0} of ${m.needs_human || 0} medium or high cases reached a person (3.5, 6.3)`, m.needs_human ? (m.reached_human === m.needs_human ? "ok" : "bad") : "")}
+    ${tile(`${m.band_agrees || 0}/${m.labelled || 0}`, "Bands agree with the analyst labels", m.labelled && m.band_agrees === m.labelled ? "ok" : "")}
+    ${tile(`${m.by_rules || 0}/${m.decided || 0}`, "Payments cleared by the rules, never seen by a model")}
+    ${tile(m.audit_returns || 0, `Reports the auditor returned${m.facts_failed ? ` (${m.facts_failed} facts failed the code check)` : ""}`, m.audit_returns ? "bad" : "")}
+    ${tile(`${m.sample_escalated || 0}/${m.sampled || 0}`, "Sampled low payments the investigator escalated (disagreement)")}
+  </div><div class="meta" style="margin-top:6px">Testing against known outcomes (8.2): the gold set is the 11 labelled payments. Run <code>evals</code> for the scored experiments in LangSmith.</div>`;
+}
+
+function routeOf(t) {
+  const d = t.decision, tri = t.triage;
+  if (d) return d.decided_by === "rules" ? (d.sample ? "Sample → investigator → rules" : "Rules") : d.investigations ? `Investigator${d.investigations > 1 ? " ×" + d.investigations : ""} + auditor` : "Person";
+  if (t.review) return "Investigator + auditor";
+  return tri.band !== "low" ? "Investigator + auditor" : tri.sample ? "Sample → investigator" : "Rules";
+}
+
+function renderTxRow(c, t) {
+  const d = t.decision, q = t.review?.question, rep = d?.report || q?.report, aud = d?.audit_detail || q?.audit;
+  const tri = d ? {score: d.risk_score, band: d.band, cut_offs: d.cut_offs, rules_fired: d.rules_detail || [], sample: d.sample} : q ? {score: q.risk_score, band: q.band, cut_offs: q.cut_offs, rules_fired: q.rules_fired, sample: false} : t.triage;
+  const open = tmOpen.has(t.transaction_id) || !!t.review;
+  const alert = c.alerts.some(a => a.transaction_id === t.transaction_id);
+  const dec = d ? `<span class="d-${esc(d.final_decision)}">${esc(d.final_decision)}</span> <span class="by">by ${esc(d.decided_by)}</span>`
+            : t.review ? `<span class="d-pending">with you</span>` : '<span class="by">not run</span>';
+  const lab = t.analyst ? `<span class="${t.band === t.expected_band && (!d || d.final_decision === t.analyst.decision) ? "match" : "miss"}">${esc(t.analyst.decision)}</span> <span class="by">${esc(t.expected_band)}${t.analyst.ambiguous ? ", ambiguous" : ""}</span>` : '<span class="by">–</span>';
+  return `<tr class="tx ${open ? "open" : ""}" onclick="toggleTx('${esc(t.transaction_id)}')">
+    <td><b>${esc(t.transaction_id)}</b><div class="by">${esc(t.timestamp.replace("T", " "))}</div></td>
+    <td>${esc(t.merchant)}<div class="by">${esc(t.category.replace(/_/g, " "))} · ${esc(t.country)} · ${esc(t.channel.replace("_", " "))}</div></td>
+    <td class="num">${Number(t.amount).toLocaleString()} ${esc(t.currency)}</td>
+    <td>${bandPill(tri.band)} <b>${esc(tri.score)}</b>${!d && !q ? '<span class="preview" title="What the rules say under today\'s settings; monitoring has not run">preview</span>' : ""}${tri.sample ? '<span class="preview" title="Below-the-line sample">sample</span>' : ""}${scoreBar(tri.score, tri.cut_offs, tri.band)}</td>
+    <td>${ruleChips(tri.rules_fired)}</td>
+    <td class="by">${esc(routeOf(t))}</td>
+    <td>${rep ? `<span class="ns ns-${esc(rep.next_step)}">${esc(NEXT[rep.next_step])}</span><div class="by">${esc(rep.assessment.replace(/_/g, " "))} · conf ${esc(rep.confidence)}</div>` : '<span class="by">–</span>'}</td>
+    <td>${aud ? `<span class="audit-${esc(aud.verdict)}">${aud.verdict === "pass" ? "✓ pass" : "✗ return"}</span>${(d?.audit_returns || 0) ? `<div class="by">returned ${d.audit_returns}×</div>` : ""}` : '<span class="by">–</span>'}</td>
+    <td>${dec}${alert ? '<span class="alert-dot" title="Alert (3.5)"></span>' : ""}</td>
+    <td>${lab}</td></tr>
+    ${open ? `<tr class="more"><td colspan="10">${renderTxMore(c, t, tri, rep, aud)}</td></tr>` : ""}`;
+}
+
+function renderTxMore(c, t, tri, rep, aud) {
+  const d = t.decision, failed = aud?.facts_failed || [];
+  const evOk = ev => !failed.some(f => f.startsWith(ev.claim + " ["));
+  const rules = tri.rules_fired.length ? `<ul>${tri.rules_fired.map(r => `<li><b>${esc(r.id)}</b> ${esc(r.name)} <span class="by">+${esc(r.weight)}</span>${para(r.paragraph)}<div class="by">${esc(r.detail)}</div></li>`).join("")}</ul>` : '<div class="by">No rule fired.</div>';
+  const report = rep ? `<div>${esc(rep.summary)}</div>
+      <table style="margin-top:6px"><thead><tr><th></th><th>Evidence</th><th>Source</th><th>Value</th></tr></thead><tbody>${rep.evidence.map(ev =>
+        `<tr><td class="${evOk(ev) ? "ev-ok" : "ev-bad"}" title="${evOk(ev) ? "Matches its record" : "Failed the code fact check"}">${evOk(ev) ? "✓" : "✗"}</td><td>${esc(ev.claim)}</td><td class="src">${esc(ev.source)}</td><td class="src">${esc(ev.value)}</td></tr>`).join("") || '<tr><td colspan="4" class="by">No evidence cited.</td></tr>'}</tbody></table>
+      <div class="meta" style="margin-top:4px">Assessment <b>${esc(rep.assessment.replace(/_/g, " "))}</b> · risk ${esc(rep.risk_score)} · confidence ${esc(rep.confidence)}${rep.confidence < c.tm.confidence_threshold ? ` <span class="miss">below ${esc(c.tm.confidence_threshold)}: the reviewer is told it is unsure</span>` : ""} · cites ${rep.paragraphs.map(p => para(p)).join("")}</div>`
+    : `<div class="by">${tri.band === "low" ? "Low band, not sampled: approved by the rules, never sent to a model." : "Not investigated yet."}</div>`;
+  const audit = aud ? `<div class="audit-${esc(aud.verdict)}">${aud.verdict === "pass" ? "✓ Passed" : "✗ Returned"}${d?.audit_returns ? ` · returned ${d.audit_returns}× in all` : ""}${aud.tipping_off ? ' · <span class="miss">tipping-off wording (7.2)</span>' : ""}</div>
+      ${failed.length || aud.issues.length ? `<ul>${failed.map(f => `<li class="ev-bad">Fact check: ${esc(f)}</li>`).join("")}${aud.issues.map(i => `<li>${esc(i)}</li>`).join("")}</ul>` : '<div class="by">Every cited fact matches its record; reasoning, paragraphs and next step fit.</div>'}`
+    : '<div class="by">No audit: nothing was escalated.</div>';
+  const human = d ? `<div><span class="d-${esc(d.final_decision)}">${esc(d.final_decision)}</span> by <b>${esc(d.decided_by)}</b>${d.agent_decision && d.decided_by === "human" ? ` <span class="by">(investigator proposed ${esc(NEXT[d.next_step] || d.next_step)})</span>` : ""}</div>
+      <div class="by">${esc(d.reason)}</div>${d.reviewer_note ? `<div class="meta" style="margin-top:4px">Note kept for later payments until <b>${esc(d.note_valid_until)}</b>${para("6.6")}</div>` : ""}
+      <div class="meta" style="margin-top:4px">Recorded under KYC ${esc((d.kyc_rating || "none").toUpperCase())} · ${esc(d.rule_set)} · ${esc(d.policy_version)} · cut-offs ${esc(d.cut_offs.join("/"))}</div>`
+    : t.review ? `<div class="decide"><div class="q" style="font-weight:600;margin-bottom:4px">${esc(t.review.question.question.split("?")[0])}?</div>
+        <ul style="margin:0 0 8px;padding-left:18px;color:var(--quiet);font-size:12px">${t.review.question.why_review.map(w => `<li>${esc(w)}</li>`).join("")}</ul>
+        <div class="row" onclick="event.stopPropagation()"><input id="tmnote-${esc(t.review.id)}" placeholder="Note for the file, reused on later payments (6.6)">
+          <button class="btn ok" onclick="decideTm('${esc(t.review.id)}','approve')">Approve</button><button class="btn no" onclick="decideTm('${esc(t.review.id)}','block')">Block</button></div>
+        <div class="meta" style="margin-top:6px">The same case is in the Dashboard queue. The investigator proposes <b>${esc(NEXT[t.review.question.next_step] || "–")}</b>; your decision stands.</div></div>`
+    : '<div class="by">Not decided yet.</div>';
+  return `<div class="more-grid" onclick="event.stopPropagation()">
+    <div><h3>3 Triage (code)</h3>${rules}<div class="meta" style="margin-top:4px">Score ${esc(tri.score)} of 100 → ${bandPill(tri.band)} (medium from ${esc(tri.cut_offs[0])}, high from ${esc(tri.cut_offs[1])})</div></div>
+    <div><h3>5 Investigator (model)</h3>${report}</div>
+    <div><h3>6 Auditor (model + code fact check)</h3>${audit}</div>
+    <div><h3>7–8 Human review and record</h3>${human}</div></div>`;
+}
+
 function renderCard(c) {
-  const changed = c.thresholds.confidence !== 0.7, busy = !!state.status.running;
-  const rows = c.transactions.map(t => {
-    const d = t.decision, alert = c.alerts.some(a => a.transaction_id === t.transaction_id);
-    const pending = state.actions.some(a => a.id.endsWith(t.transaction_id));
-    const dec = d ? `<span class="d-${esc(d.final_decision)}">${esc(d.final_decision)}</span> <span class="by">${esc(d.decided_by)}${d.risk_score !== undefined ? " · score " + esc(d.risk_score) : ""}</span>`
-                  : pending ? `<span class="d-pending">with reviewer</span>` : `<span class="by">not scored</span>`;
-    const lab = t.analyst ? `<span class="${d ? (d.final_decision === t.analyst.decision ? "match" : "miss") : "by"}">${esc(t.analyst.decision)}</span> <span class="by">score ${esc(t.analyst.risk_score)}</span>` : "";
-    return `<tr><td>${esc(t.transaction_id)}</td><td>${esc(t.timestamp.replace("T", " "))}</td><td>${esc(t.merchant)} <span class="by">${esc(t.category)}, ${esc(t.country)}</span></td>
-      <td class="num">${Number(t.amount).toLocaleString()} ${esc(t.currency)}</td><td>${dec}${alert ? '<span class="alert-dot" title="alert"></span>' : ""}</td><td>${lab}</td></tr>`;
-  }).join("");
-  const why = !c.onboarded ? "Not onboarded yet: screen and approve them in KYC first" : c.tm_waiting ? "A payment is waiting in the action queue" : "";
+  const busy = !!state.status.running, s = c.tm, flag = c.refresh_flag, cs = c.conduct;
+  const why = !c.onboarded ? "Not onboarded yet: screen and approve them in KYC first" : c.tm_waiting ? "A payment is waiting for a reviewer" : "";
   return `<div class="panel cust" style="margin-top:16px">
     <div class="cust-head"><span class="name"><a href="#" onclick="pick('${esc(c.customer_id)}');return false">${esc(c.name)}</a></span><span class="meta">${esc(c.customer_id)} · card ${esc(c.user_id)}</span>
-      <span class="rating r-${c.risk ? esc(c.risk.rating) : "none"}">${c.risk ? "KYC " + esc(c.risk.rating.toUpperCase()) : "NOT ONBOARDED"}</span><span class="spacer"></span>
+      <span class="rating r-${c.risk ? esc(c.risk.rating) : "none"}">${c.risk ? "KYC " + esc(c.risk.rating.toUpperCase()) : "NOT ONBOARDED"}</span>
+      ${cs.decisions ? `<span class="score sc-${esc(cs.score)}" title="TM conduct score for the period monitored">TM ${esc(cs.score.toUpperCase())}</span>` : ""}<span class="spacer"></span>
       <button class="act ${c.monitor_due ? "next" : ""}" ${busy || why || !c.runnable ? "disabled" : ""} title="${esc(why)}" onclick="post('/api/client/${esc(c.customer_id)}/monitor')">Monitor payments</button></div>
-    ${c.refresh ? `<div class="flag">KYC refresh triggered by transaction alerts ${para(state.policy.citations.alerts_for_kyc_refresh)}</div>` : ""}
-    <div class="thresholds"><div class="th ${changed ? "changed" : ""}">Human review below confidence <b>${c.thresholds.confidence}</b></div>
-      <div class="th ${changed ? "changed" : ""}">Grey zone <b>${c.thresholds.grey_zone[0]}–${c.thresholds.grey_zone[1] - 1}</b></div>
-      ${c.monitor_due ? '<div class="th changed">Rating or policy changed since the last run: monitoring due</div>' : ""}</div>
-    <table><thead><tr><th>ID</th><th>When</th><th>Merchant</th><th class="num">Amount</th><th>Decision</th><th>Analyst label</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    <div class="chips"><span class="${s.client_band === "high_risk" ? "hot" : ""}">Rules: ${s.client_band === "high_risk" ? "high-risk set (R-01 to R-05)" : "standard set (R-01 to R-04)"}</span>
+      <span class="${s.cut_offs[0] !== 30 ? "hot" : ""}">Medium from <b>${esc(s.cut_offs[0])}</b>, high from <b>${esc(s.cut_offs[1])}</b>${para(s.cut_off_paragraph)}</span>
+      <span>Investigator unsure below <b>${esc(s.confidence_threshold)}</b></span><span>Policy <b>${esc(s.policy)}</b></span>
+      ${c.monitor_due ? '<span class="hot">Rating or policy changed since the last run: monitoring due</span>' : ""}</div>
+    ${flag ? `<div class="flag">KYC refresh due by ${esc(flag.due_by || "–")}: ${esc(flag.reason)} ${para("5.5")}</div>` : ""}
+    ${cs.decisions ? `<div class="meta" style="margin:8px 0">TM conduct score <b>${esc(cs.score)}</b>${cs.period ? ` for ${esc(cs.period[0])} to ${esc(cs.period[1])}` : ""}: ${cs.drivers.map(esc).join("; ")}. Evidence for the KYC reviewer, never a rating on its own.</div>` : ""}
+    <table><thead><tr><th>Payment</th><th>Merchant</th><th class="num">Amount</th><th>Triage</th><th>Rules fired</th><th>Route</th><th>Investigator</th><th>Audit</th><th>Decision</th><th>Analyst label</th></tr></thead>
+      <tbody>${c.transactions.map(t => renderTxRow(c, t)).join("")}</tbody></table>
+    <div class="meta" style="margin-top:6px">Click a payment for its triage, the investigator's report with every cited fact checked, the auditor's verdict and the decision. Analyst label: the gold answer from the data set, with the band it implies.</div></div>`;
 }
 
 const listTable = rows => rows.length ? `<table><thead><tr>${Object.keys(rows[0]).map(k => `<th>${esc(words(k))}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${Object.values(r).map(v => `<td>${esc(fmt(v))}</td>`).join("")}</tr>`).join("")}</tbody></table>` : "";
@@ -480,7 +630,11 @@ async function poll() {
   renderRegister();
   if (tab === "bank") loadBank().catch(e => { $("#err").textContent = "Could not load the bank view: " + e; });
   paint("#customer", JSON.stringify([state.customer, busy]), renderCustomer(state.customer));
-  paint("#tm", JSON.stringify([state.card_clients, busy, state.actions.map(a => a.id)]), state.card_clients.map(renderCard).join(""));
+  paint("#tm-flow", "flow", renderFlow());
+  paint("#tm-rules", JSON.stringify([ruleSetShown, state.policy]), renderRuleSets());
+  paint("#tm-metrics", JSON.stringify(state.card_clients.map(c => c.metrics)), renderTmMetrics());
+  paint("#tm", JSON.stringify([state.card_clients, busy, state.actions.map(a => a.id), [...tmOpen]]),
+    state.card_clients.map(renderCard).join("") || '<div class="panel empty" style="margin-top:16px">No client with a card account.</div>');
 
   const titles = state.document_titles || {};
   if (paint("#doc", JSON.stringify([state.documents, titles]), state.documents.map(d => `<option value="${esc(d)}">${esc(d)}: ${esc(titles[d] || "")}</option>`).join(""))) $("#doc").value = state.documents.includes("PS26-7") ? "PS26-7" : state.documents[0];

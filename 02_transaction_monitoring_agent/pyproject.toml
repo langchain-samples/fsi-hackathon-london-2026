@@ -14,4 +14,5 @@ dependencies = [
     "notebook>=7,<8",
     "managed-deepagents>=0.9,<1",
     "langchain-anthropic>=1.0,<2",
+    "pyyaml>=6,<7",
 ]

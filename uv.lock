@@ -3661,6 +3661,7 @@ dependencies = [
     { name = "managed-deepagents" },
     { name = "notebook" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -3674,6 +3675,7 @@ requires-dist = [
     { name = "managed-deepagents", specifier = ">=0.9,<1" },
     { name = "notebook", specifier = ">=7,<8" },
     { name = "python-dotenv", specifier = ">=1.0,<2" },
+    { name = "pyyaml", specifier = ">=6,<7" },
 ]
 
 [[package]]

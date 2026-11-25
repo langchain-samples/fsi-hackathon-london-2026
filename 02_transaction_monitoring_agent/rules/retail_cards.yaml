@@ -1,0 +1,79 @@
+# Retail card rule set: the demo profile. Read by tools/rules.py.
+#
+# Each rule is a small Python function in tools/rules.py; this file holds its parameters, weight and paragraph.
+# Changing a rule is a reviewed config change, not a prompt edit.
+#
+# Weights add up to a score out of 100 (capped). The band cut-offs are NOT set here: they come from the run
+# context (MyAgentContext.grey_zone = (medium from, high from)), which the control tower sets from the approved
+# policy. Standard clients: medium from 30, high from 70. High-risk clients under PS26-7: medium from 20 (6.3).
+
+rule_set: retail_cards
+title: Retail cards (demo)
+description: Card payments by retail individuals, scored against the customer's declared usual behaviour.
+
+# Illustrative fixed rates for the synthetic data only. Amounts are compared in the customer's currency, and in GBP
+# for the high-risk merchant limit.
+fx_to_gbp: {GBP: 1.0, EUR: 0.85, USD: 0.78}
+
+rules:
+  - id: R-01
+    name: Abroad, above usual maximum
+    fn: abroad_above_usual
+    description: Payment outside the home country above the customer's usual maximum
+    weight: 30
+    paragraph: "6.2"
+  - id: R-02
+    name: Impossible travel
+    fn: impossible_travel
+    description: In-person payments in two countries within 6 hours
+    params: {within_hours: 6, channel: in_person}
+    weight: 80
+    paragraph: "6.1"
+  - id: R-03
+    name: High-risk merchant
+    fn: high_risk_merchant
+    description: High-risk merchant category (crypto, gift cards, gambling) above GBP 250
+    params: {categories: [crypto, gift_cards, gambling], limit_gbp: 250}
+    weight: 70
+    paragraph: "6.4"
+  - id: R-04
+    name: New category, above usual maximum
+    fn: new_category_above_usual
+    description: A category the customer hasn't used before, above the usual maximum
+    weight: 30
+    paragraph: "6.1"
+  - id: R-05
+    name: High-risk client, above usual maximum
+    fn: above_usual_max
+    description: High-risk clients only, any payment above the usual maximum
+    applies_to: [high_risk]
+    weight: 20
+    paragraph: "Firm rule, 6.3"
+
+# Below-the-line sample: a fixed share of low-band payments goes to the investigator anyway, chosen by a hash of
+# the transaction ID so runs repeat. On 15 transactions a 10% rate may pick none, so the demo names one.
+sample:
+  rate: 0.10
+  named: [TX-2002]
+
+# Reviewer explanations (6.6) are reused on later payments until they expire. Expired notes never reach the
+# investigator.
+review_notes:
+  valid_days: 30
+
+# The auditor returns a report at most this many times before the reviewer sees its objections.
+max_returns: 2
+
+# The PS26-7 paragraphs the investigator and auditor may cite, in short. Full text: 03's PS26-7 document.
+paragraphs:
+  "2.4": The firm remains responsible for every decision, however it is made.
+  "3.5": An alert is any transaction that monitoring blocks, or refers for human review.
+  "5.5": Re-rate a customer within 10 business days of a trigger event (including the alerts in 6.5).
+  "6.1": Monitor every card transaction against the customer's usual behaviour and current risk rating.
+  "6.2": High-risk customers, payment abroad above the usual maximum must be referred to a human.
+  "6.3": High-risk customers, refer any risk score of 20 or more, or any decision with confidence below 0.85.
+  "6.4": Any customer, a payment over GBP 250 to crypto, gift cards or gambling must be referred to a human.
+  "6.5": 2 or more alerts in 30 days is a trigger event under 5.5.
+  "6.6": Record a reviewer's explanation of an alert and take it into account on later transactions.
+  "7.1": Knowledge or suspicion of proceeds of crime, submit a SAR within 2 business days.
+  "7.2": Never tell the customer a report has been made or is being considered.

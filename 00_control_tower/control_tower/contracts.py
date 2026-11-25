@@ -73,13 +73,18 @@ class TmContextFields(BaseModel):
 
 
 class TmDecision(BaseModel, extra="allow"):
-    """One record in the ("decisions", user_id) store namespace, written by the TM agent's record_decision."""
+    """One record in the ("decisions", user_id) store namespace, written by the TM agent's record_decision.
+
+    `decided_by` is "rules" for low-band payments the rules engine cleared without a model or a person, "human" for
+    every alert. "agent" is kept for older 02 versions. Extra fields (band, rules_fired, next_step, audit, report,
+    kyc_rating, rule_set, policy_version...) travel with the record without a contract change.
+    """
 
     transaction_id: str
     risk_score: int = Field(ge=0, le=100)
     confidence: float = Field(ge=0, le=1)
     final_decision: Literal["approve", "block"]
-    decided_by: Literal["agent", "human"]
+    decided_by: Literal["agent", "human", "rules"]
     reason: str = ""
 
 
