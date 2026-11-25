@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-label="FCA Compliance Agent architecture. Reviews start in the ReguLens web UI, Studio chat or the command line, pass through an inbound adapter into one compliance core (triage, per-unit analysis, report and summary), then an optional human gate, then an outbound adapter. The core reaches the language model, the FCA Handbook and the Consumer Credit Act 1974 only through ports."><defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5B6C82"/></marker></defs><rect width="1920" height="1080" fill="#FFFFFF"/>
+<text x="60" y="112" font-size="42" font-weight="700" fill="#12263F" text-anchor="start">One compliance core reviews pull requests, codebases and product specs</text>
+<text x="60" y="160" font-size="24" font-weight="400" fill="#4A5B70" text-anchor="start">FCA Compliance Agent: every review is checked against the FCA Handbook and the Consumer Credit Act 1974</text>
+<rect x="60" y="236" width="220" height="464" rx="16" fill="#F8FAFC" stroke="#CBD4DF" stroke-width="2"/>
+<text x="170.0" y="272" font-size="20" font-weight="700" fill="#12263F" text-anchor="middle">Start a review</text>
+<rect x="74" y="292" width="192" height="112" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="170.0" y="329.6" font-size="20" font-weight="700" fill="#12263F" text-anchor="middle">ReguLens web UI</text>
+<text x="170.0" y="357.6" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">HTTP API,</text>
+<text x="170.0" y="382.6" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">report only</text>
+<rect x="74" y="430" width="192" height="112" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="170.0" y="467.6" font-size="20" font-weight="700" fill="#12263F" text-anchor="middle">Studio chat</text>
+<text x="170.0" y="495.6" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">picks the review</text>
+<text x="170.0" y="520.6" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">from the message</text>
+<rect x="74" y="568" width="192" height="112" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="170.0" y="618.1" font-size="20" font-weight="700" fill="#12263F" text-anchor="middle">Command line</text>
+<text x="170.0" y="646.1" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">run.sh</text>
+<rect x="316" y="236" width="220" height="464" rx="16" fill="#F8FAFC" stroke="#CBD4DF" stroke-width="2"/>
+<text x="426.0" y="272" font-size="20" font-weight="700" fill="#12263F" text-anchor="middle">Inbound adapters</text>
+<rect x="330" y="292" width="192" height="112" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="426.0" y="342.8" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">Pull request</text>
+<text x="426.0" y="370.8" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">reads the diff</text>
+<rect x="330" y="430" width="192" height="112" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="426.0" y="480.8" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">Codebase</text>
+<text x="426.0" y="508.8" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">clones the repo</text>
+<rect x="330" y="568" width="192" height="112" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="426.0" y="606.3" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">Product spec</text>
+<text x="426.0" y="634.3" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">PDF, Markdown</text>
+<text x="426.0" y="659.3" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">or text</text>
+<rect x="640" y="292" width="700" height="408" rx="18" fill="#F3F7FF" stroke="#12263F" stroke-width="3.5"/>
+<text x="990.0" y="330" font-size="24" font-weight="700" fill="#12263F" text-anchor="middle">Compliance core</text>
+<rect x="662" y="430" width="168" height="112" rx="10" fill="#DCE9FF" stroke="#2F6BDB" stroke-width="2"/>
+<text x="746.0" y="468.3" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">Triage units</text>
+<text x="746.0" y="496.3" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">keeps what is</text>
+<text x="746.0" y="521.3" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">relevant</text>
+<rect x="882" y="342" width="246" height="300" rx="12" fill="#FFFFFF" stroke="#A9B8CB" stroke-width="2"/>
+<rect x="875" y="349" width="246" height="300" rx="12" fill="#FFFFFF" stroke="#A9B8CB" stroke-width="2"/>
+<rect x="868" y="356" width="246" height="300" rx="12" fill="#FFFFFF" stroke="#5B6C82" stroke-width="2"/>
+<text x="991.0" y="387" font-size="20" font-weight="700" fill="#12263F" text-anchor="middle">Analyze, per unit</text>
+<rect x="882" y="404" width="218" height="68" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="991.0" y="432.1" font-size="20" font-weight="700" fill="#12263F" text-anchor="middle">Search rules</text>
+<text x="991.0" y="460.1" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">FCA and CCA</text>
+<rect x="882" y="488" width="218" height="68" rx="10" fill="#DCE9FF" stroke="#2F6BDB" stroke-width="2"/>
+<text x="991.0" y="516.1" font-size="20" font-weight="700" fill="#12263F" text-anchor="middle">Cross-check</text>
+<text x="991.0" y="544.1" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">writes findings</text>
+<rect x="882" y="572" width="218" height="68" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="991.0" y="600.1" font-size="20" font-weight="700" fill="#12263F" text-anchor="middle">Ground citations</text>
+<text x="991.0" y="628.1" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">drops unmatched rules</text>
+<path d="M991.0 472V486" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M991.0 556V570" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="1162" y="374" width="156" height="94" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="1240.0" y="402.9" font-size="21" font-weight="700" fill="#12263F" text-anchor="middle">Report</text>
+<text x="1240.0" y="430.9" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">rank findings,</text>
+<text x="1240.0" y="455.9" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">set the verdict</text>
+<rect x="1162" y="504" width="156" height="94" rx="10" fill="#DCE9FF" stroke="#2F6BDB" stroke-width="2"/>
+<text x="1240.0" y="532.9" font-size="21" font-weight="700" fill="#12263F" text-anchor="middle">Summary</text>
+<text x="1240.0" y="560.9" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">cannot change</text>
+<text x="1240.0" y="585.9" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">the verdict</text>
+<path d="M1240.0 468V502" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M830 486H865" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M1128 421H1159" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="1444" y="414" width="146" height="144" rx="10" fill="#FFF0CC" stroke="#C27C06" stroke-width="2"/>
+<text x="1517.0" y="455.4" font-size="21" font-weight="700" fill="#12263F" text-anchor="middle">Human gate</text>
+<text x="1517.0" y="483.4" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">optional:</text>
+<text x="1517.0" y="508.4" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">approve, filter</text>
+<text x="1517.0" y="533.4" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">or reject</text>
+<rect x="1626" y="236" width="234" height="464" rx="16" fill="#F8FAFC" stroke="#CBD4DF" stroke-width="2"/>
+<text x="1743.0" y="272" font-size="20" font-weight="700" fill="#12263F" text-anchor="middle">Outbound adapters</text>
+<rect x="1640" y="292" width="206" height="112" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="1743.0" y="342.8" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">PR comment</text>
+<text x="1743.0" y="370.8" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">posts the findings</text>
+<rect x="1640" y="430" width="206" height="112" rx="10" fill="#DCE9FF" stroke="#2F6BDB" stroke-width="2"/>
+<text x="1743.0" y="468.3" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">Fix pull request</text>
+<text x="1743.0" y="496.3" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">edits each file</text>
+<text x="1743.0" y="521.3" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">with findings</text>
+<rect x="1640" y="568" width="206" height="112" rx="10" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="1743.0" y="618.8" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">PDF report</text>
+<text x="1743.0" y="646.8" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">for a product spec</text>
+<path d="M280 486H313" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M536 486H635" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M1342 486H1441" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M1590 486H1623" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="586.0" y="448" font-size="18" font-weight="600" fill="#12263F" text-anchor="middle">Analysis</text>
+<text x="586.0" y="471" font-size="18" font-weight="600" fill="#12263F" text-anchor="middle">units</text>
+<text x="1391.0" y="448" font-size="18" font-weight="600" fill="#12263F" text-anchor="middle">Findings</text>
+<text x="1391.0" y="471" font-size="18" font-weight="600" fill="#12263F" text-anchor="middle">report</text>
+<path d="M536 262H1623" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)" stroke-dasharray="8 7"/>
+<rect x="728.0" y="246" width="524" height="32" rx="0" fill="#FFFFFF" stroke="none" stroke-width="0"/>
+<text x="990.0" y="269" font-size="19" font-weight="600" fill="#12263F" text-anchor="middle">Repo and PR details, and the output type, bypass the core</text>
+<path d="M1517.0 558V624" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="1529.0" y="596" font-size="18" font-weight="600" fill="#12263F" text-anchor="start">reject</text>
+<rect x="1444" y="627" width="146" height="50" rx="25" fill="#FFFFFF" stroke="#8A98AA" stroke-width="2"/>
+<text x="1517.0" y="659" font-size="19" font-weight="600" fill="#12263F" text-anchor="middle">Run ends</text>
+<path d="M743.0 721V803" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)" marker-start="url(#a)"/>
+<rect x="685.0" y="681" width="116" height="38" rx="19" fill="#12263F" stroke="#12263F" stroke-width="2"/>
+<text x="743.0" y="707" font-size="19" font-weight="700" fill="#FFFFFF" text-anchor="middle">LLM port</text>
+<rect x="640" y="806" width="206" height="118" rx="10" fill="#FFFFFF" stroke="#8A98AA" stroke-width="2"/>
+<text x="743.0" y="859.8" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">Language model</text>
+<text x="743.0" y="887.8" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">through LangChain</text>
+<path d="M978.0 721V803" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)" marker-start="url(#a)"/>
+<rect x="920.0" y="681" width="116" height="38" rx="19" fill="#12263F" stroke="#12263F" stroke-width="2"/>
+<text x="978.0" y="707" font-size="19" font-weight="700" fill="#FFFFFF" text-anchor="middle">FCA port</text>
+<rect x="862" y="806" width="232" height="118" rx="10" fill="#DDF3E4" stroke="#23834A" stroke-width="2"/>
+<text x="978.0" y="847.3" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">FCA Handbook</text>
+<text x="978.0" y="875.3" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">MCP server, Qdrant</text>
+<text x="978.0" y="900.3" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">hybrid search</text>
+<path d="M1225.0 721V803" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)" marker-start="url(#a)"/>
+<rect x="1167.0" y="681" width="116" height="38" rx="19" fill="#12263F" stroke="#12263F" stroke-width="2"/>
+<text x="1225.0" y="707" font-size="19" font-weight="700" fill="#FFFFFF" text-anchor="middle">CCA port</text>
+<rect x="1110" y="806" width="230" height="118" rx="10" fill="#DDF3E4" stroke="#23834A" stroke-width="2"/>
+<text x="1225.0" y="847.3" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">CCA 1974</text>
+<text x="1225.0" y="875.3" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">MCP server,</text>
+<text x="1225.0" y="900.3" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">BM25 search</text>
+<rect x="316" y="806" width="220" height="118" rx="10" fill="#FFFFFF" stroke="#8A98AA" stroke-width="2"/>
+<text x="426.0" y="859.8" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">GitHub and files</text>
+<text x="426.0" y="887.8" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">git and gh</text>
+<path d="M426 806V703" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="440" y="760" font-size="18" font-weight="600" fill="#12263F" text-anchor="start">reads</text>
+<rect x="1626" y="806" width="234" height="118" rx="10" fill="#FFFFFF" stroke="#8A98AA" stroke-width="2"/>
+<text x="1743.0" y="859.8" font-size="22" font-weight="700" fill="#12263F" text-anchor="middle">GitHub and files</text>
+<text x="1743.0" y="887.8" font-size="19" font-weight="400" fill="#4A5B70" text-anchor="middle">git, gh and reports/</text>
+<path d="M1743 700V803" fill="none" stroke="#5B6C82" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="1757" y="760" font-size="18" font-weight="600" fill="#12263F" text-anchor="start">writes</text>
+<rect x="60" y="808" width="26" height="22" rx="5" fill="#EEF1F5" stroke="#8A98AA" stroke-width="2"/>
+<text x="98" y="826" font-size="19" font-weight="400" fill="#12263F" text-anchor="start">Plain code</text>
+<rect x="60" y="838" width="26" height="22" rx="5" fill="#DCE9FF" stroke="#2F6BDB" stroke-width="2"/>
+<text x="98" y="856" font-size="19" font-weight="400" fill="#12263F" text-anchor="start">LLM call</text>
+<rect x="60" y="868" width="26" height="22" rx="5" fill="#FFF0CC" stroke="#C27C06" stroke-width="2"/>
+<text x="98" y="886" font-size="19" font-weight="400" fill="#12263F" text-anchor="start">Human decision</text>
+<rect x="60" y="898" width="26" height="22" rx="5" fill="#DDF3E4" stroke="#23834A" stroke-width="2"/>
+<text x="98" y="916" font-size="19" font-weight="400" fill="#12263F" text-anchor="start">MCP tools</text>
+<line x1="60" y1="958" x2="1860" y2="958" stroke="#CBD4DF" stroke-width="2"/>
+<text x="60" y="1000" font-size="22" font-weight="700" fill="#12263F" text-anchor="start">Grounded citations</text>
+<text x="60" y="1032" font-size="20" font-weight="400" fill="#4A5B70" text-anchor="start">Code drops any citation that does not match a retrieved rule.</text>
+<text x="672" y="1000" font-size="22" font-weight="700" fill="#12263F" text-anchor="start">Verdict set by code</text>
+<text x="672" y="1032" font-size="20" font-weight="400" fill="#4A5B70" text-anchor="start">Fixed rules turn the findings into a verdict.</text>
+<text x="1284" y="1000" font-size="22" font-weight="700" fill="#12263F" text-anchor="start">Human control</text>
+<text x="1284" y="1032" font-size="20" font-weight="400" fill="#4A5B70" text-anchor="start">Chat waits for approval before it writes to GitHub.</text>
+</svg>

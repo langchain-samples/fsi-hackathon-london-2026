@@ -35,42 +35,11 @@ adapters/  ──▶  core/  ──▶  ports/  ──▶  domain/
 
 ### 2.1 Hexagonal Architecture Overview
 
-```mermaid
-flowchart TB
-    subgraph Driving["Inbound adapters (one per module)"]
-        direction LR
-        IN_PR["PR review<br/>gh pr diff"]
-        IN_REPO["Codebase<br/>git clone"]
-        IN_SPEC["Product spec<br/>PDF, Markdown or text"]
-        IN_PR ~~~ IN_REPO ~~~ IN_SPEC
-    end
+![FCA Compliance Agent architecture: three ways to start a review feed inbound adapters, one compliance core, an optional human gate and outbound adapters. The core reaches the language model, the FCA Handbook and the Consumer Credit Act only through ports.](images/architecture.png)
 
-    subgraph Hexagon["Core compliance agent (hexagon interior)"]
-        direction LR
-        TRIAGE["triage_units<br/>relevance filter"] --> ANALYZE["analyze_unit x N<br/>parallel fan-out"] --> SYNTH["synthesize_report<br/>deduplicate and verdict"]
-    end
+For slides, use [`images/architecture.png`](images/architecture.png) (16:9, 3840 x 2160) or [`images/architecture.svg`](images/architecture.svg), which is also the one to edit.
 
-    HITL["human_review_gate<br/>optional LangGraph interrupt"]
-
-    subgraph Outbound["Outbound adapters (one per module)"]
-        direction LR
-        OUT_PR["PR comment<br/>gh pr comment"]
-        OUT_REPO["Remediation PR<br/>edit + git + gh pr create"]
-        OUT_SPEC["PDF report<br/>saved in reports/"]
-        OUT_PR ~~~ OUT_REPO ~~~ OUT_SPEC
-    end
-
-    subgraph Regulatory["Regulatory ports and MCP adapters (stdio / Streamable HTTP)"]
-        direction TB
-        FCA["FCAHandbookPort<br/>MCPFCAHandbookAdapter"]
-        CCA["ConsumerCreditActPort<br/>MCPConsumerCreditActAdapter"]
-    end
-
-    Driving -->|AnalysisInput| Hexagon
-    Hexagon -->|FindingsReport| HITL
-    HITL --> Outbound
-    Hexagon <-.->|"analyze_unit: rules"| Regulatory
-```
+Left out of the picture: if no unit is relevant, triage goes straight to the report. If the `output_type` is `report`, the outbound adapter only saves the report. `POST /review` in the HTTP API sends files straight to the core and returns the findings.
 
 ### 2.2 Pipeline Execution & State Flow
 
