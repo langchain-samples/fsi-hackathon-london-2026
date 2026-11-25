@@ -22,13 +22,16 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from ..domain.models import DeliverableResult, FindingsReport, OutputType
+from ..domain.models import DeliverableResult, Finding, FindingsReport, OutputType
 from .github_codebase import render_codebase_markdown
 from .github_pr import render_markdown
 from .output_type import GITHUB_WRITES, InvalidInputError, ReviewKind, decide_output_type
 from .product_spec import SUFFIXES, render_spec_markdown
 
 SPECS_DIR = Path(__file__).resolve().parents[3] / "specs"  # the only folder a chat message can name a file in
+
+# Studio shows a message of more than 20,000 characters as plain text. This leaves some room.
+MAX_REPLY_CHARS = 18_000
 
 _Target = tuple[ReviewKind, str, dict[str, Any]]
 _RENDER: dict[str, Callable[[FindingsReport], str]] = {
@@ -270,6 +273,45 @@ def _explain(error: Exception, request: ReviewRequest) -> str | None:
     return None
 
 
+def _saved_report(deliverable: DeliverableResult | None) -> str:
+    """Where the whole report is. A review that a person rejected has no files."""
+    files = [a for a in (deliverable.artifacts if deliverable else []) if not a.startswith(("http://", "https://"))]
+    path = next((a for suffix in (".pdf", ".md") for a in files if a.endswith(suffix)), None)
+    return f"`{path}`" if path else "this run's `findings_report`"
+
+
+def _fit(text: str, findings: list[Finding], room: int, saved: str) -> str:
+    """The rendered report in at most `room` characters.
+
+    The findings are in order of severity. As many as fit are shown in full, and every other one as one line.
+    """
+    if len(text) <= room:
+        return text
+    body, disclaimer = text.rsplit("\n", 1)
+    headers = [f"### [{f.severity.upper()}] {f.title}\n" for f in findings]
+    starts: list[int] = []
+    for header in headers:
+        starts.append(body.index(header, starts[-1] + 1 if starts else 0))
+    blocks = [body[start:end] for start, end in zip(starts, [*starts[1:], len(body)], strict=False)]
+    head = body[: starts[0]] if starts else body
+    lines = []
+    for finding, header, block in zip(findings, headers, blocks, strict=True):
+        where = block[len(header) :].split(" · status `", 1)[0].strip()
+        title = " ".join(finding.title.split())
+        lines.append(f"- **[{finding.severity.upper()}]** {title}" + (f" ({where})" if where else "") + "\n")
+
+    short = text
+    for shown in reversed(range(len(blocks))):
+        rest = len(blocks) - shown
+        note = f"**{shown} of {len(blocks)} findings are in full here and {rest} as one line each.** All in full: {saved}\n\n"
+        more = f"### {rest} more, one line each\n\n"
+        short = "".join([head, note, *blocks[:shown], more, *lines[shown:], "\n", disclaimer])
+        if len(short) <= room:
+            return short
+    end = f"\n\n**This is cut short: the rest does not fit in a chat message.** All of it: {saved}\n\n{disclaimer}"
+    return short[: max(room - len(end), 0)].rsplit("\n", 1)[0] + end
+
+
 def _reply(request: ReviewRequest, result: dict[str, Any]) -> str:
     report, deliverable = result["findings_report"], result.get("deliverable_result")
     output_type = result.get("output_type")
@@ -283,7 +325,9 @@ def _reply(request: ReviewRequest, result: dict[str, Any]) -> str:
     context = result.get("adapter_context") or {}
     if skipped := context.get("files_skipped") or context.get("sections_skipped"):
         notes.append(f"{skipped} file(s) or section(s) were not read, such as lockfiles, images and anything past the limit.")
-    return "\n\n".join([*notes, _RENDER[request.kind](report)])
+    intro = "\n\n".join(notes) + "\n\n"
+    text = _RENDER[request.kind](report)
+    return intro + _fit(text, report.findings, MAX_REPLY_CHARS - len(intro), _saved_report(deliverable))
 
 
 def build_combined_graph(
