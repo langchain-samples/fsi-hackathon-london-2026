@@ -197,3 +197,6 @@ cython_debug/
 
 # FCA agent review outputs
 04_fca_compliance_agent/reports/
+
+# Cloned UI repo (managed by make run)
+agent-ui/
