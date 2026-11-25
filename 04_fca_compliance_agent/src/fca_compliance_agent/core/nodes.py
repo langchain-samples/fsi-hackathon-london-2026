@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from typing import Any, Literal
 
 from langgraph.graph import END
 from langgraph.types import Send, interrupt
+
+logger = logging.getLogger(__name__)
 
 from ..domain.models import (
     SEVERITY_RANK,
@@ -138,8 +141,14 @@ def make_triage_node(analyzer_port: ComplianceAnalyzerPort):
     async def triage_units(state: CoreAnalysisState) -> dict[str, Any]:
         analysis_input = state["analysis_input"]
         if not analysis_input.units:
+            logger.info("Triage skipped for %s (0 units)", analysis_input.target_id)
             return {"triaged_units": []}
 
+        logger.info(
+            "Triage started for %s (%d unit(s))",
+            analysis_input.target_id,
+            len(analysis_input.units),
+        )
         triaged = await analyzer_port.triage_units(analysis_input)
         # Ensure every unit has a triage entry (default relevant if omitted by model)
         triaged_by_id = {t.unit_id: t for t in triaged}
@@ -157,6 +166,13 @@ def make_triage_node(analyzer_port: ComplianceAnalyzerPort):
                         cca_queries=[unit.title],
                     )
                 )
+        relevant = sum(1 for item in normalised if item.is_relevant)
+        logger.info(
+            "Triage complete for %s: %d/%d unit(s) relevant",
+            analysis_input.target_id,
+            relevant,
+            len(normalised),
+        )
         return {"triaged_units": normalised}
 
     return triage_units
@@ -202,6 +218,13 @@ def make_analyze_unit_node(
 
         fca_queries = triage.fca_queries or [unit.title]
         cca_queries = triage.cca_queries or [unit.title]
+        logger.info(
+            "Analyzing %s: %d FCA query(ies), %d CCA query(ies), %d CCA section(s)",
+            unit.title,
+            len(fca_queries),
+            len(cca_queries),
+            len(triage.cca_sections),
+        )
 
         executed_queries: list[str] = []
         fca_tasks = []
@@ -242,6 +265,12 @@ def make_analyze_unit_node(
             executed_queries.append("CCA_DOC:ALL")
             cca_passages = _dedupe_passages(await cca_port.get_document(section=None))
 
+        logger.info(
+            "Retrieved %d FCA passage(s) and %d CCA passage(s) for %s; running LLM review",
+            len(fca_passages),
+            len(cca_passages),
+            unit.title,
+        )
         findings = await analyzer_port.analyze_unit(
             unit=unit,
             analysis_input_summary=state["analysis_input_summary"],
@@ -249,6 +278,7 @@ def make_analyze_unit_node(
             cca_passages=cca_passages,
         )
         findings = _ground_findings(findings, fca_passages + cca_passages)
+        logger.info("Finished %s: %d grounded finding(s)", unit.title, len(findings))
 
         return {
             "unit_findings": findings,
@@ -297,6 +327,15 @@ def make_synthesize_report_node(analyzer_port: ComplianceAnalyzerPort):
             units_skipped=units_skipped,
             regulatory_queries_executed=queries,
             scope_not_searched=not_searched,
+        )
+        logger.info(
+            "Report %s synthesized for %s: verdict=%s, findings=%d (%d/%d units)",
+            report.report_id,
+            report.target_id,
+            report.overall_verdict,
+            len(report.findings),
+            units_triaged_in,
+            units_total,
         )
         return {"findings_report": report}
 

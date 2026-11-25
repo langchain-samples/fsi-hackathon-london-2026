@@ -24,12 +24,13 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
+import threading
 import time
+from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
 import httpx
 from dotenv import dotenv_values
@@ -532,14 +533,38 @@ def ensure_agent_ui(
 @dataclass
 class ManagedService:
     name: str
+    tag: str
     url: str
     proc: subprocess.Popen[Any] | None
-    log_file: IO[bytes] | None
+    recent_lines: deque[str] = field(default_factory=lambda: deque(maxlen=200))
+    reader_thread: threading.Thread | None = None
+
+
+_PRINT_LOCK = threading.Lock()
+
+
+def _stream_pipe(tag: str, pipe: Any, recent_lines: deque[str]) -> None:
+    try:
+        for raw_line in iter(pipe.readline, ""):
+            line = raw_line.rstrip("\r\n")
+            if not line:
+                continue
+            recent_lines.append(line)
+            with _PRINT_LOCK:
+                print(f"[{tag}] {line}", flush=True)
+    except OSError:
+        pass
+    finally:
+        try:
+            pipe.close()
+        except OSError:
+            pass
 
 
 def _start_or_reuse_service(
     *,
     name: str,
+    tag: str,
     host: str,
     port: int,
     url: str,
@@ -549,24 +574,47 @@ def _start_or_reuse_service(
     timeout: float = 30.0,
 ) -> ManagedService:
     if is_port_listening(host, port, timeout=0.35):
-        print(f"[reused]  {name}: {url}")
-        return ManagedService(name=name, url=url, proc=None, log_file=None)
+        print(f"[reused]  {name}: {url}", flush=True)
+        return ManagedService(name=name, tag=tag, url=url, proc=None)
 
-    log_file = tempfile.TemporaryFile()
+    child_env = {**env, "PYTHONUNBUFFERED": "1"}
+    recent_lines: deque[str] = deque(maxlen=200)
     proc = subprocess.Popen(
         cmd,
         cwd=str(cwd),
-        env=env,
-        stdout=log_file,
+        env=child_env,
+        stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    reader = threading.Thread(
+        target=_stream_pipe,
+        args=(tag, proc.stdout, recent_lines),
+        name=f"log-{tag}",
+        daemon=True,
+    )
+    reader.start()
+    service = ManagedService(
+        name=name,
+        tag=tag,
+        url=url,
+        proc=proc,
+        recent_lines=recent_lines,
+        reader_thread=reader,
     )
     try:
-        wait_for_port(host, port, proc=proc, timeout=timeout, log_file=log_file)
-    except Exception:
-        _stop_service(ManagedService(name=name, url=url, proc=proc, log_file=log_file))
+        wait_for_port(host, port, proc=proc, timeout=timeout)
+    except Exception as exc:
+        tail = "\n".join(recent_lines)
+        _stop_service(service)
+        if tail and tail not in str(exc):
+            raise RuntimeError(f"{exc}\nRecent [{tag}] output:\n{tail}") from exc
         raise
-    print(f"[started] {name}: {url}")
-    return ManagedService(name=name, url=url, proc=proc, log_file=log_file)
+    print(f"[started] {name}: {url}", flush=True)
+    return service
 
 
 def _stop_service(service: ManagedService) -> None:
@@ -579,23 +627,11 @@ def _stop_service(service: ManagedService) -> None:
             service.proc.wait(timeout=5.0)
         except OSError:
             pass
-    if service.log_file is not None:
-        try:
-            service.log_file.close()
-        except OSError:
-            pass
 
 
-def _read_tail(log_file: IO[bytes] | None, max_chars: int = 2000) -> str:
-    if log_file is None:
-        return ""
-    try:
-        log_file.flush()
-        log_file.seek(0)
-        text = log_file.read().decode("utf-8", errors="replace").strip()
-        return text[-max_chars:] if len(text) > max_chars else text
-    except OSError:
-        return ""
+def _read_tail(recent_lines: deque[str], max_chars: int = 2000) -> str:
+    text = "\n".join(recent_lines).strip()
+    return text[-max_chars:] if len(text) > max_chars else text
 
 
 def _verify_stack_health(api_url: str, ui_url: str) -> dict[str, Any]:
@@ -662,6 +698,7 @@ def run_stack(args: argparse.Namespace) -> None:
         services.append(
             _start_or_reuse_service(
                 name="FCA Handbook RAG MCP",
+                tag="fca-mcp",
                 host=host,
                 port=args.fca_mcp_port,
                 url=fca_url,
@@ -674,6 +711,7 @@ def run_stack(args: argparse.Namespace) -> None:
         services.append(
             _start_or_reuse_service(
                 name="Consumer Credit Act MCP",
+                tag="cca-mcp",
                 host=host,
                 port=args.cca_mcp_port,
                 url=cca_url,
@@ -695,6 +733,7 @@ def run_stack(args: argparse.Namespace) -> None:
         services.append(
             _start_or_reuse_service(
                 name="FCA Compliance Agent API",
+                tag="agent-api",
                 host=host,
                 port=args.api_port,
                 url=api_url,
@@ -718,6 +757,7 @@ def run_stack(args: argparse.Namespace) -> None:
             services.append(
                 _start_or_reuse_service(
                     name="ReguLens Agent UI",
+                    tag="agent-ui",
                     host=host,
                     port=args.ui_port,
                     url=ui_url,
@@ -758,7 +798,7 @@ def run_stack(args: argparse.Namespace) -> None:
         while not stop_requested:
             for svc in services:
                 if svc.proc is not None and svc.proc.poll() is not None:
-                    logs = _read_tail(svc.log_file)
+                    logs = _read_tail(svc.recent_lines)
                     raise RuntimeError(
                         f"{svc.name} exited unexpectedly with code {svc.proc.returncode}.\n{logs}"
                     )

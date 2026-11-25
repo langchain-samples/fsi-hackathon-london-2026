@@ -16,8 +16,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import re
+import sys
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,7 +30,10 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 from ..agent import build_default_core_subgraph
 from ..core import build_pipeline_for_module
@@ -52,7 +58,13 @@ from .github_codebase import (
     render_codebase_markdown,
 )
 from .github_pr import build_github_pr_review_module
-from .llm.langchain_llm import load_repo_env
+from .llm.langchain_llm import (
+    LangChainComplianceAnalyzer,
+    list_available_models,
+    load_repo_env,
+    resolve_default_model_name,
+)
+from .outbound.code_remediator import LangChainCodeRemediator
 from .outbound.github_client import GitHubCLIAdapter
 from .product_spec import build_product_spec_review_module
 
@@ -62,6 +74,7 @@ DEFAULT_GITHUB_ORG = "natchainsix"
 
 _REPORT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _SLUG_PART_RE = re.compile(r"^[\w.-]+$")
+_MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9_.:/-]{1,120}$")
 
 _STATUS_TO_REGULENS: dict[str, str] = {
     "non_compliant": "NON_COMPLIANT",
@@ -94,10 +107,15 @@ class ReviewRequestPayload(BaseModel):
     files: list[ReviewFile] = Field(default_factory=list)
     instructions: str = ""
     specialty: str = "fca_compliance"
+    model_name: str | None = None
 
 
 class LangServeReviewEnvelope(BaseModel):
     input: ReviewRequestPayload
+
+
+class ModelSelectPayload(BaseModel):
+    model_name: str
 
 
 class RunRequestPayload(BaseModel):
@@ -114,6 +132,7 @@ class RunRequestPayload(BaseModel):
     spec_text: str | None = None
     spec_path: str | None = None
     message: str | None = None
+    model_name: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +280,7 @@ def create_app(
     reports_dir: Path | None = None,
     default_org: str | None = None,
     pipelines: dict[str, Any] | None = None,
+    model_lister: Callable[[], list[dict[str, str]]] | None = None,
 ) -> FastAPI:
     """Create the FastAPI application wired to real compliance graphs and GitHub discovery."""
     load_repo_env()
@@ -268,29 +288,64 @@ def create_app(
     resolved_reports_dir = Path(reports_dir) if reports_dir is not None else REPORTS_DIR
     resolved_org = (default_org or os.environ.get("GITHUB_ORG") or DEFAULT_GITHUB_ORG).strip()
     gh_client = github_client or GitHubCLIAdapter()
+    default_model = resolve_default_model_name()
+    fetch_models = model_lister or list_available_models
 
     state_cache: dict[str, Any] = {
         "core": core_subgraph,
+        "cores_by_model": {},
         "pipelines": dict(pipelines) if pipelines else None,
+        "pipelines_by_model": {},
+        "selected_model": default_model,
         "runs": {},
+        "run_subscribers": {},
         "tasks": set(),
     }
 
-    def get_core() -> Any:
-        if state_cache["core"] is None:
-            factory = core_factory or build_default_core_subgraph
-            state_cache["core"] = factory()
-        return state_cache["core"]
+    def _validate_model_name(name: str | None) -> str:
+        chosen = (name or state_cache["selected_model"] or default_model).strip()
+        if not _MODEL_NAME_RE.match(chosen) or "gpt-6" not in chosen.lower():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported model_name {chosen!r}; only gpt-6 based models are allowed.",
+            )
+        return chosen
 
-    def get_pipelines() -> dict[str, Any]:
-        if state_cache["pipelines"] is None:
-            core = get_core()
+    def get_core(model_name: str | None = None) -> Any:
+        chosen = _validate_model_name(model_name)
+        if state_cache["core"] is not None:
+            return state_cache["core"]
+        if core_factory is not None:
+            if chosen not in state_cache["cores_by_model"]:
+                state_cache["cores_by_model"][chosen] = core_factory()
+            return state_cache["cores_by_model"][chosen]
+        if chosen not in state_cache["cores_by_model"]:
+            state_cache["cores_by_model"][chosen] = build_default_core_subgraph(
+                analyzer_port=LangChainComplianceAnalyzer(model_name=chosen),
+            )
+        return state_cache["cores_by_model"][chosen]
+
+    def get_pipelines(model_name: str | None = None) -> dict[str, Any]:
+        chosen = _validate_model_name(model_name)
+        if state_cache["pipelines"] is not None:
+            return state_cache["pipelines"]
+        if chosen not in state_cache["pipelines_by_model"]:
+            core = get_core(chosen)
             pr_pipe = build_pipeline_for_module(
                 build_github_pr_review_module(github_client=gh_client, reports_dir=resolved_reports_dir),
                 core_subgraph=core,
             )
+            remediator = (
+                None
+                if state_cache["core"] is not None or core_factory is not None
+                else LangChainCodeRemediator(model_name=chosen)
+            )
             codebase_pipe = build_pipeline_for_module(
-                build_github_codebase_review_module(github_client=gh_client, reports_dir=resolved_reports_dir),
+                build_github_codebase_review_module(
+                    remediator=remediator,
+                    github_client=gh_client,
+                    reports_dir=resolved_reports_dir,
+                ),
                 core_subgraph=core,
             )
             spec_pipe = build_pipeline_for_module(
@@ -302,13 +357,13 @@ def create_app(
                 codebase_review=codebase_pipe,
                 product_spec=spec_pipe,
             )
-            state_cache["pipelines"] = {
+            state_cache["pipelines_by_model"][chosen] = {
                 "pr_review": pr_pipe,
                 "codebase_review": codebase_pipe,
                 "product_spec": spec_pipe,
                 "chat": combined_pipe,
             }
-        return state_cache["pipelines"]
+        return state_cache["pipelines_by_model"][chosen]
 
     app = FastAPI(
         title="FCA & CCA Compliance Agent API",
@@ -340,13 +395,37 @@ def create_app(
         return {
             "status": "ok",
             "default_org": resolved_org,
-            "model_name": os.environ.get("MODEL_NAME", "openai:gpt-6-luna"),
+            "model_name": state_cache["selected_model"],
+            "default_model": default_model,
             "fca_mcp_url": fca_url,
             "fca_mcp_reachable": _probe_url(fca_url),
             "cca_mcp_url": cca_url,
             "cca_mcp_reachable": _probe_url(cca_url),
             "reports_count": len(reports),
             "active_runs": sum(1 for r in state_cache["runs"].values() if r["status"] in {"queued", "running"}),
+        }
+
+    # ------------------------------------------------------------------
+    # Model Discovery & Selection (LangSmith LLM Gateway)
+    # ------------------------------------------------------------------
+
+    @app.get("/api/models")
+    async def list_models() -> dict[str, Any]:
+        models = await asyncio.to_thread(fetch_models)
+        return {
+            "default_model": default_model,
+            "selected_model": state_cache["selected_model"],
+            "models": models,
+        }
+
+    @app.post("/api/models/select")
+    async def select_model(req: ModelSelectPayload) -> dict[str, Any]:
+        chosen = _validate_model_name(req.model_name)
+        state_cache["selected_model"] = chosen
+        logger.info("Active compliance model switched to %s", chosen)
+        return {
+            "default_model": default_model,
+            "selected_model": chosen,
         }
 
     # ------------------------------------------------------------------
@@ -388,7 +467,16 @@ def create_app(
             units=units,
         )
 
-        core = get_core()
+        effective_model = _validate_model_name(req.model_name)
+        started = time.monotonic()
+        logger.info(
+            "POST /review started for %s (%d file(s), commit=%s, model=%s)",
+            req.repository,
+            len(units),
+            req.commit[:12],
+            effective_model,
+        )
+        core = get_core(effective_model)
         result = await core.ainvoke({"analysis_input": analysis_input})
         report: FindingsReport = result["findings_report"]
         _persist_report(report, resolved_reports_dir)
@@ -403,6 +491,14 @@ def create_app(
             if converted is not None:
                 mapped.append(converted)
 
+        logger.info(
+            "POST /review completed for %s in %.1fs: report=%s verdict=%s findings=%d",
+            req.repository,
+            time.monotonic() - started,
+            report.report_id,
+            report.overall_verdict,
+            len(mapped),
+        )
         return {
             "findings": mapped[:200],
             "report_id": report.report_id,
@@ -618,42 +714,186 @@ def create_app(
 
         return req.message.strip()[:120], {"messages": [HumanMessage(content=req.message.strip())]}
 
-    async def _run_pipeline_job(run_id: str, mode: str, payload: dict[str, Any]) -> None:
+    def _emit_run_event(run_id: str, stage: str, node: str, message: str) -> None:
+        record = state_cache["runs"].get(run_id)
+        if record is None:
+            return
+        event = {
+            "seq": len(record["events"]) + 1,
+            "time": time.time(),
+            "stage": stage,
+            "node": node,
+            "message": message,
+        }
+        record["events"].append(event)
+        record["current_stage"] = stage
+        record["current_message"] = message
+        record["updated_at"] = datetime.now(timezone.utc).isoformat()
+        for queue in list(state_cache["run_subscribers"].get(run_id, ())):
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                pass
+
+    def _describe_graph_update(namespace: tuple[str, ...], node_name: str, update: Any) -> tuple[str, str]:
+        full_node = ":".join((*namespace, node_name)) if namespace else node_name
+        data = update if isinstance(update, dict) else {}
+
+        if node_name == "inbound_adapter":
+            analysis_input = data.get("analysis_input")
+            units = getattr(analysis_input, "units", None)
+            count = len(units) if units is not None else 0
+            title = getattr(analysis_input, "title", "") or "target"
+            return "inbound", f"Collected {count} file(s)/unit(s) for {title}"
+
+        if node_name == "triage_units":
+            triaged = data.get("triaged_units") or []
+            relevant = sum(1 for item in triaged if getattr(item, "is_relevant", False))
+            return "triage", f"Triaged {len(triaged)} unit(s) — {relevant} relevant for FCA/CCA review"
+
+        if node_name == "analyze_unit":
+            findings = data.get("unit_findings") or []
+            queries = data.get("queries_executed") or []
+            unit_label = ""
+            if findings:
+                loc = getattr(findings[0], "location", None)
+                unit_label = getattr(loc, "file_path", "") or getattr(loc, "document_name", "") or ""
+            elif queries:
+                unit_label = str(queries[0]).split(":", 1)[-1][:60]
+            suffix = f" ({unit_label})" if unit_label else ""
+            return "analyze", f"Reviewed unit{suffix} — {len(findings)} finding(s), {len(queries)} regulatory lookup(s)"
+
+        if node_name == "synthesize_report":
+            report = data.get("findings_report")
+            if report is not None:
+                return (
+                    "synthesize",
+                    f"Synthesized {report.report_id}: {report.overall_verdict} ({len(report.findings)} finding(s))",
+                )
+            return "synthesize", "Synthesized compliance findings report"
+
+        if node_name == "core_analysis":
+            report = data.get("findings_report")
+            if report is not None:
+                return (
+                    "synthesize",
+                    f"Core analysis finished ({report.report_id}: {len(report.findings)} finding(s))",
+                )
+            return "synthesize", "Core compliance analysis finished"
+
+        if node_name == "human_review_gate":
+            return "review_gate", "Human review gate evaluated"
+
+        if node_name == "outbound_adapter":
+            deliverable = data.get("deliverable_result")
+            summary = getattr(deliverable, "summary", "") if deliverable is not None else ""
+            return "outbound", f"Outbound delivery complete: {summary[:160]}" if summary else "Outbound delivery complete"
+
+        if node_name == "chat_adapter":
+            req_meta = data.get("request") or {}
+            kind = req_meta.get("kind") or "request"
+            return "inbound", f"Routed chat request to {kind}"
+
+        return "review", f"Completed node {full_node}"
+
+    async def _run_pipeline_job(
+        run_id: str,
+        mode: str,
+        payload: dict[str, Any],
+        model_name: str,
+    ) -> None:
         record = state_cache["runs"][run_id]
         record["status"] = "running"
-        record["updated_at"] = datetime.now(timezone.utc).isoformat()
+        started = time.monotonic()
+        output_type_hint = payload.get("output_type") or (payload.get("raw_input") or {}).get("output_type")
+        logger.info(
+            "Run %s started: mode=%s target=%s model=%s output_type=%s",
+            run_id,
+            mode,
+            record["target"],
+            model_name,
+            output_type_hint,
+        )
+        _emit_run_event(run_id, "inbound", "start", f"Starting {mode} for {record['target']} ({model_name})")
         try:
-            pipeline = get_pipelines()[mode]
-            result = await pipeline.ainvoke(payload)
-            report = result.get("findings_report")
-            deliverable = result.get("deliverable_result")
-            messages = result.get("messages") or []
+            pipeline = get_pipelines(model_name)[mode]
+            final_state: dict[str, Any] = {}
+
+            if hasattr(pipeline, "astream"):
+                async for item in pipeline.astream(payload, stream_mode="updates", subgraphs=True):
+                    if isinstance(item, tuple) and len(item) == 2:
+                        namespace, chunk = item
+                    else:
+                        namespace, chunk = (), item
+                    if not isinstance(chunk, dict):
+                        continue
+                    ns_tuple = tuple(str(p) for p in namespace) if isinstance(namespace, (tuple, list)) else ()
+                    for node_name, update in chunk.items():
+                        stage, msg = _describe_graph_update(ns_tuple, str(node_name), update)
+                        full_node = ":".join((*ns_tuple, str(node_name))) if ns_tuple else str(node_name)
+                        _emit_run_event(run_id, stage, full_node, msg)
+                        if not ns_tuple and isinstance(update, dict):
+                            final_state.update(update)
+            else:
+                final_state = await pipeline.ainvoke(payload)
+
+            report = final_state.get("findings_report")
+            deliverable = final_state.get("deliverable_result")
+            messages = final_state.get("messages") or []
             reply_text = None
             if messages:
                 last_msg = messages[-1]
                 reply_text = getattr(last_msg, "content", None)
 
             record["status"] = "completed"
-            record["output_type"] = result.get("output_type")
+            record["output_type"] = final_state.get("output_type")
             record["findings_report"] = report.model_dump(mode="json") if report is not None else None
             record["deliverable_result"] = deliverable.model_dump(mode="json") if deliverable is not None else None
             record["reply"] = reply_text
+            done_msg = (
+                f"Completed in {time.monotonic() - started:.1f}s: "
+                f"{report.overall_verdict} ({len(report.findings)} finding(s))"
+                if report is not None
+                else f"Completed in {time.monotonic() - started:.1f}s"
+            )
+            _emit_run_event(run_id, "completed", "done", done_msg)
+            logger.info(
+                "Run %s completed in %.1fs: report=%s verdict=%s findings=%s deliverable=%s",
+                run_id,
+                time.monotonic() - started,
+                report.report_id if report is not None else None,
+                report.overall_verdict if report is not None else None,
+                len(report.findings) if report is not None else 0,
+                deliverable.summary if deliverable is not None else "none",
+            )
         except Exception as exc:
             record["status"] = "failed"
             record["error"] = f"{type(exc).__name__}: {exc}"
+            _emit_run_event(run_id, "failed", "error", f"Failed: {type(exc).__name__}: {exc}")
+            logger.exception("Run %s failed after %.1fs: %s", run_id, time.monotonic() - started, exc)
         finally:
             record["updated_at"] = datetime.now(timezone.utc).isoformat()
+            for queue in list(state_cache["run_subscribers"].get(run_id, ())):
+                try:
+                    queue.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
 
     @app.post("/api/runs", status_code=202)
     async def create_run(req: RunRequestPayload) -> dict[str, Any]:
         target, payload = _build_run_input(req)
+        effective_model = _validate_model_name(req.model_name)
         run_id = f"RUN-{uuid4().hex[:8].upper()}"
         now = datetime.now(timezone.utc).isoformat()
         record: dict[str, Any] = {
             "run_id": run_id,
             "mode": req.mode,
             "target": target,
+            "model_name": effective_model,
             "status": "queued",
+            "current_stage": "queued",
+            "current_message": f"Queued {req.mode} for {target} ({effective_model})",
+            "events": [],
             "created_at": now,
             "updated_at": now,
             "output_type": None,
@@ -663,7 +903,8 @@ def create_app(
             "error": None,
         }
         state_cache["runs"][run_id] = record
-        task = asyncio.create_task(_run_pipeline_job(run_id, req.mode, payload))
+        state_cache["run_subscribers"][run_id] = set()
+        task = asyncio.create_task(_run_pipeline_job(run_id, req.mode, payload, effective_model))
         state_cache["tasks"].add(task)
         task.add_done_callback(state_cache["tasks"].discard)
         return record
@@ -683,6 +924,65 @@ def create_app(
         if record is None:
             raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
         return record
+
+    @app.get("/api/runs/{run_id}/events")
+    async def stream_run_events(run_id: str) -> StreamingResponse:
+        record = state_cache["runs"].get(run_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
+
+        async def event_generator():
+            queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=256)
+            subscribers = state_cache["run_subscribers"].setdefault(run_id, set())
+            subscribers.add(queue)
+            sent_seq = 0
+            try:
+                for past in list(record["events"]):
+                    sent_seq = max(sent_seq, past["seq"])
+                    yield f"event: progress\ndata: {json.dumps(past)}\n\n"
+
+                if record["status"] in {"completed", "failed"}:
+                    summary = {
+                        "run_id": run_id,
+                        "status": record["status"],
+                        "output_type": record["output_type"],
+                        "error": record["error"],
+                        "findings_report": record["findings_report"],
+                        "deliverable_result": record["deliverable_result"],
+                    }
+                    yield f"event: done\ndata: {json.dumps(summary)}\n\n"
+                    return
+
+                while True:
+                    try:
+                        evt = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    except asyncio.TimeoutError:
+                        yield ": keepalive\n\n"
+                        continue
+                    if evt is None:
+                        break
+                    if evt["seq"] <= sent_seq:
+                        continue
+                    sent_seq = evt["seq"]
+                    yield f"event: progress\ndata: {json.dumps(evt)}\n\n"
+
+                summary = {
+                    "run_id": run_id,
+                    "status": record["status"],
+                    "output_type": record["output_type"],
+                    "error": record["error"],
+                    "findings_report": record["findings_report"],
+                    "deliverable_result": record["deliverable_result"],
+                }
+                yield f"event: done\ndata: {json.dumps(summary)}\n\n"
+            finally:
+                subscribers.discard(queue)
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     return app
 
@@ -706,6 +1006,12 @@ def main(argv: list[str] | None = None) -> None:
         help=f"Default GitHub organisation for /api/targets (default: GITHUB_ORG or {DEFAULT_GITHUB_ORG}).",
     )
     args = parser.parse_args(argv)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
     app = create_app(default_org=args.github_org)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
