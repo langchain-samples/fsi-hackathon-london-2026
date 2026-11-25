@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FinCrime Control Tower</title>
+<title>Compliance Control Tower</title>
 <style>
   :root {
     --bg: #0d1117; --panel: #151b23; --panel2: #1b222c; --line: #2a3340; --ink: #e6edf3; --quiet: #8b98a8;
@@ -38,6 +38,32 @@
   tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--panel2); } tr.sel td { background: var(--panel2); }
   .p-tower { background: #60a5fa22; color: var(--accent); }
   pre.brief { white-space: pre-wrap; font: 12.5px/1.5 inherit; max-height: 420px; overflow: auto; margin: 0; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+  .b-sum { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-bottom: 10px; }
+  .b-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .b-chip { background: none; border: 1px solid var(--line); color: var(--quiet); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .b-chip.on { border-color: var(--accent); color: var(--ink); background: var(--panel2); }
+  .b-wrap { max-height: 520px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .b-wrap td { vertical-align: top; } .b-wrap th { position: sticky; top: 0; background: var(--panel); }
+  .b-src { white-space: nowrap; color: var(--reg); font-size: 12px; }
+  .b-app { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
+  .b-app.yes { color: var(--good); background: #34d39922; } .b-app.no { color: var(--quiet); background: var(--panel2); } .b-app.unclear { color: var(--warn); background: #fbbf2422; }
+  .b-due { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .b-act { color: var(--quiet); font-size: 12.5px; margin-top: 4px; }
+  .rv { font-size: 13px; line-height: 1.5; }
+  .rv-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rv-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink); }
+  .rv-tag.own { font-weight: 400; color: var(--quiet); }
+  .rv-tag.imp-high { color: var(--bad); border-color: var(--bad); } .rv-tag.imp-medium { color: var(--warn); border-color: var(--warn); }
+  .rv-sec { margin-bottom: 10px; } .rv-sec > b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--reg); margin-bottom: 2px; }
+  .rv-sec p { margin: 0; } .rv ul { margin: 4px 0 0; padding-left: 18px; }
+  .rv-tier { margin: 4px 0 6px; } .rv-tier > b { font-size: 12px; }
+  .rv-dates { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+  .rv-date { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; display: grid; }
+  .rv-date b { font-size: 12.5px; font-variant-numeric: tabular-nums; } .rv-date span { font-size: 11px; color: var(--quiet); }
+  .rv-journey { border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 13px; }
+  .rv-journey.on { background: #f59e0b1a; border: 1px solid var(--tm); } .rv-journey.off { background: #34d3991a; border: 1px solid var(--good); }
+  .rv-changes { margin-bottom: 10px; }
+  .action.reg-action { border-left-color: var(--reg); }
   .st-approved { color: var(--good); } .st-rejected { color: var(--bad); } .st-pending_review { color: var(--warn); } .st-not_screened { color: var(--quiet); }
   .match { color: var(--good); } .miss { color: var(--bad); font-weight: 600; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
@@ -121,7 +147,7 @@
 </head>
 <body>
 <header>
-  <h1>FinCrime Control Tower</h1>
+  <h1>Compliance Control Tower</h1>
   <span class="sub">Harbour Mutual Bank · one supervisor over KYC, transaction monitoring and regulatory change</span>
   <span id="mode" class="badge">…</span>
   <span class="spacer"></span>
@@ -134,6 +160,7 @@
   <button class="tab" data-tab="kyc">KYC</button>
   <button class="tab" data-tab="tm">Transaction monitoring</button>
   <button class="tab" data-tab="reg">Regulatory change</button>
+  <button class="tab" data-tab="bank">Our bank</button>
 </nav>
 <main>
   <div id="err" class="err" style="margin-bottom:8px"></div>
@@ -184,7 +211,7 @@
     <div class="col">
       <div class="panel">
         <h2>Regulatory change manager</h2>
-        <select id="doc"></select>
+        <select id="doc" onchange="paintBrief()"></select>
         <button class="act" id="brief" style="width:100%" onclick="post('/api/regulation/' + $('#doc').value)">Brief this document for our firm</button>
       </div>
       <div class="panel"><h2>Internal: our firm</h2><div id="firm"></div></div>
@@ -193,6 +220,22 @@
     <div class="col">
       <div class="panel"><h2>Clients: controls that change</h2><div id="policy" class="empty">Baseline: the default controls. No regulatory change is live.</div></div>
       <div class="panel"><h2>Clients: who is affected</h2><div id="affected" class="empty">No client is out of date with the live policy.</div></div>
+    </div>
+  </section>
+
+  <section class="view g-split" id="v-bank">
+    <div class="col">
+      <div class="panel"><h2>Gaps in the bank's records</h2><div id="bank-gaps" class="empty">Loading…</div></div>
+      <div class="panel"><h2>The bank</h2><div id="bank-profile"></div></div>
+      <div class="panel"><h2>Senior managers</h2><div id="bank-people"></div></div>
+      <div class="panel"><h2>Important business services</h2><div id="bank-services"></div></div>
+      <div class="panel"><h2>Third parties and contracts</h2><div id="bank-contracts"></div></div>
+    </div>
+    <div class="col">
+      <div class="panel"><h2>Regulation library</h2><div id="bank-library"></div></div>
+      <div class="panel"><h2>Clients</h2><div id="bank-clients"></div></div>
+      <div class="panel"><h2>Controls in force</h2><div id="bank-controls"></div></div>
+      <div class="meta">Read-only. This is what the agents know about the bank: the 03 firm data, the KYC client files and the live policy. Synthetic data.</div>
     </div>
   </section>
 </main>
@@ -212,6 +255,39 @@ const fieldNames = {
   high_risk_merchant_limit_gbp: "High-risk merchant limit (£)", alerts_for_kyc_refresh: "Alerts that trigger KYC refresh",
   alert_window_days: "Alert window (days)", edd_for_peps: "EDD for PEPs",
 };
+// The 03 agent returns a Brief (JSON): a summary, then one item per obligation with what it means for the firm.
+// Every briefed regulation keeps its own brief: the panel shows the one picked in the document list.
+let briefFilter = "all";
+function setBriefFilter(f) { briefFilter = f; paintBrief(); }
+function showBrief(doc) { $("#doc").value = doc; briefFilter = "all"; paintBrief(); }
+function paintBrief() {
+  if (!state) return;
+  const briefs = state.briefs || {}, doc = $("#doc").value, b = briefs[doc], done = Object.keys(briefs);
+  const switcher = done.length ? `<div class="b-chips">${done.map(d => `<button class="b-chip${d === doc ? " on" : ""}" onclick="showBrief('${esc(d)}')">${esc(d)}: ${esc(briefs[d].title)}</button>`).join("")}</div>` : "";
+  paint("#briefText", JSON.stringify([doc, b, briefFilter, done]), switcher + (b ? renderBrief(b)
+    : `<span class="empty">${esc(doc)} has not been briefed yet. Press "Brief this document for our firm".</span>`));
+}
+function renderBrief(b) {
+  let data = null;
+  try { data = JSON.parse(b.text); } catch (e) { /* an older plain-text brief */ }
+  const head = `<div style="margin-bottom:8px"><b style="font-size:15px">${esc(b.title || (data && data.title) || b.document)}</b>
+    <div class="meta">${esc(b.document)}, briefed for the bank by the regulatory agent (project 03)</div></div>`;
+  if (!data || !Array.isArray(data.items)) return head + `<pre class="brief">${esc(b.text)}</pre>`;
+  const items = data.items, count = k => items.filter(i => i.applies_to_firm === k).length;
+  const filters = [["all", `All ${items.length}`], ["yes", `Applies ${count("yes")}`], ["unclear", `Check ${count("unclear")}`],
+                   ["no", `Does not apply ${count("no")}`], ["due", `With a deadline ${items.filter(i => i.firm_deadline).length}`]];
+  const shownItems = items.filter(i => briefFilter === "all" || (briefFilter === "due" ? i.firm_deadline : i.applies_to_firm === briefFilter));
+  const rows = shownItems.map(i => `<tr>
+      <td class="meta">${esc(i.id)}</td>
+      <td>${esc(i.summary)}${i.firm_action ? `<div class="b-act">${esc(i.firm_action)}</div>` : ""}</td>
+      <td class="b-src">${esc(paraList(i.source))}</td>
+      <td>${i.applies_to_firm ? `<span class="b-app ${esc(i.applies_to_firm)}">${i.applies_to_firm === "unclear" ? "check" : esc(i.applies_to_firm)}</span>` : ""}</td>
+      <td class="b-due">${esc(i.firm_deadline || "")}</td></tr>`).join("");
+  return head + (data.review ? renderReview(data, false) + `<div class="hist-title" style="margin:12px 0 6px">Every obligation</div>`
+                             : `<div class="b-sum"><b>${esc(data.title)}</b><br>${esc(data.summary)}</div>`)
+    + `<div class="b-chips">${filters.map(([k, label]) => `<button class="b-chip${briefFilter === k ? " on" : ""}" onclick="setBriefFilter('${k}')">${esc(label)}</button>`).join("")}</div>`
+    + `<div class="b-wrap"><table><thead><tr><th>#</th><th>Obligation and what the firm must do</th><th>Source</th><th>Firm</th><th>Firm deadline</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">Nothing in this view.</td></tr>'}</tbody></table></div>`;
+}
 const fmt = v => typeof v === "number" ? v.toLocaleString() : Array.isArray(v) ? (v.length ? v.join(", ") : "none") : (v === null ? "none" : v === true ? "yes" : v === false ? "no" : v);
 
 function show(t) {
@@ -235,7 +311,88 @@ async function ask(ev) {
   $("#q").value = ""; post("/api/chat", {message: q, customer_id: ""});
 }
 
+// --- the 03 reviewer summary (sections A to E, MillTech horizon-scanning format) -----------------------------
+const paraList = s => { const p = [...new Set(String(s || "").match(/\d+\.\d+/g) || [])]; return p.length ? "¶ " + p.join(", ") : String(s || ""); };
+const src = s => s ? `<span class="b-src">${esc(paraList(s))}</span>` : "";
+function renderReview(rv, compact) {
+  const r = rv && rv.review;
+  if (!r) return "";
+  const act = a => `<li>${esc(a.action)} <span class="meta">· ${esc(a.owner)}${a.deadline ? " · by " + esc(a.deadline) : ""}</span> ${src(a.source)}</li>`;
+  const tier = (label, list) => list && list.length ? `<div class="rv-tier"><b>${label}</b><ul>${list.map(act).join("")}</ul></div>` : "";
+  const dates = (rv.key_dates || []).slice(0, compact ? 4 : 12);
+  const c = rv.counts;
+  const head = `<div class="rv-tags"><span class="rv-tag">${esc(r.classification)}</span>
+      <span class="rv-tag imp-${esc(String(r.impact).toLowerCase())}">${esc(r.impact)} impact</span>
+      ${r.effective_date ? `<span class="rv-tag">In force ${esc(r.effective_date)}</span>` : ""}
+      ${(r.owners || []).map(o => `<span class="rv-tag own">${esc(o)}</span>`).join("")}</div>
+    <div class="meta" style="margin:4px 0 8px">${esc(r.impact_reason)}</div>`;
+  const strip = dates.length ? `<div class="rv-dates">${dates.map(d => `<div class="rv-date"><b>${esc(d.date)}</b><span>${d.item_ids.length} item${d.item_ids.length > 1 ? "s" : ""} · ${esc(paraList(d.sources.join(" ")))}</span></div>`).join("")}</div>` : "";
+  const counts = c ? `<div class="meta" style="margin-bottom:8px">${c.total} obligations: ${c.applies} apply, ${c.check} to check, ${c.does_not_apply} do not apply, ${c.with_deadline} with a firm deadline</div>` : "";
+  if (compact) {
+    return `<div class="rv">${head}<div class="rv-sec"><b>A. Summary</b><p>${esc(r.a_summary)}</p></div>
+      <div class="rv-sec"><b>C. Impact</b><p>${esc(r.c_impact)}</p></div>
+      ${tier("D. Immediate actions", r.d_immediate)}${strip}
+      <div class="meta">${(r.e_open_questions || []).length} open question(s). <a href="#" onclick="show('reg');return false">Read the full A–E summary and every obligation</a></div></div>`;
+  }
+  return `<div class="rv">${head}${counts}
+    <div class="rv-sec"><b>A. Summary</b><p>${esc(r.a_summary)}</p></div>
+    <div class="rv-sec"><b>B. Applicability to the bank</b><p>${esc(r.b_applicability)}</p></div>
+    <div class="rv-sec"><b>C. Impact</b><p>${esc(r.c_impact)}</p></div>
+    <div class="rv-sec"><b>D. Recommended actions</b>${tier("Immediate", r.d_immediate)}${tier("Near-term", r.d_near_term)}${tier("Monitoring", r.d_monitoring)}</div>
+    ${strip ? `<div class="rv-sec"><b>Firm deadlines</b>${strip}</div>` : ""}
+    <div class="rv-sec"><b>E. Key takeaways</b><ul>${(r.e_takeaways || []).map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>
+    ${(r.e_open_questions || []).length ? `<div class="rv-sec"><b>Open questions</b><ul>${r.e_open_questions.map(q => `<li>${esc(q.question)} <span class="meta">· ${esc(q.owner)}</span> ${src(q.source)}</li>`).join("")}</ul></div>` : ""}
+  </div>`;
+}
+
+function renderRegAction(a) {
+  const signOff = a.journey === "sign_off";
+  const banner = signOff
+    ? `<div class="rv-journey off"><b>Sign-off only.</b> This brief changes no KYC or monitoring control. Signing off records that the bank has reviewed it; the actions below go to their owners.</div>`
+    : `<div class="rv-journey on"><b>Control change.</b> The tower found ${a.changes.length} gap(s) between the bank's live controls and what the document requires. Nothing changes until you approve.</div>`;
+  const table = !signOff && a.changes.length ? `<table class="rv-changes"><thead><tr><th>Control</th><th>Today</th><th>Required</th><th>¶</th></tr></thead><tbody>${a.changes.map(c =>
+      `<tr><td>${esc(fieldNames[c.field] || words(c.field))}</td><td class="meta">${esc(fmt(c.before))}</td><td><b>${esc(fmt(c.after))}</b></td><td class="b-src">${esc(c.paragraph)}</td></tr>`).join("")}</tbody></table>` : "";
+  return `<div class="action reg-action"><div class="top"><span class="pill p-reg">REG</span><b>${esc(a.kind)}</b>
+      <span class="subj">${esc(a.subject)}${a.review && a.review.title ? ` · <span class="meta">${esc(a.review.title)}</span>` : ""}</span>
+      <span class="spacer"></span><span class="meta">${esc(a.id)}</span></div>
+    ${banner}${table}${renderReview(a.review, true)}
+    <div class="row"><input id="note-${esc(a.id)}" placeholder="Reviewer note (optional)">
+      <button class="btn ok" onclick="decide('${esc(a.id)}','approve')">${esc(a.approve_label)}</button>
+      <button class="btn no" onclick="decide('${esc(a.id)}','reject')">${esc(a.reject_label)}</button></div></div>`;
+}
+
+// --- Our bank: everything the agents know about the bank, read-only -------------------------------------------
+let bank = null;
+async function loadBank() {
+  bank = await (await fetch("/api/bank")).json();
+  const b = bank, f = b.firm, s = b.small_firm_test || {};
+  const yesNo = v => v ? "yes" : "no";
+  paint("#bank-gaps", JSON.stringify(b.gaps), b.gaps.length ? b.gaps.map(g => `<div class="flag">${esc(g)}</div>`).join("") : '<span class="empty">No gaps recorded.</span>');
+  paint("#bank-profile", JSON.stringify([f, s]), `<div><b>${esc(f.name)}</b> <span class="meta">${esc(f.firm_id)} · ${esc(f.type)}</span></div>
+    <div class="thresholds" style="margin:8px 0"><div class="th"><b>${Number(f.customers).toLocaleString()}</b><div class="meta">customers</div></div>
+      <div class="th"><b>${esc(f.total_assets)}</b><div class="meta">total assets</div></div>
+      <div class="th"><b>${s.is_small_firm === false ? "No" : s.is_small_firm ? "Yes" : "?"}</b><div class="meta">small firm (¶ ${esc(s.paragraph || "–")})</div></div></div>
+    <div class="meta">${esc(s.explanation || "")}</div><div class="meta" style="margin-top:6px">${esc(f.notes || "")}</div>`);
+  paint("#bank-people", JSON.stringify(b.senior_managers), `<table><thead><tr><th>Senior manager for</th><th>Named</th></tr></thead><tbody>${b.senior_managers.map(m =>
+    `<tr><td>${esc(m.role)}</td><td>${m.name ? esc(m.name) : '<span class="miss">Not named</span>'}</td></tr>`).join("")}</tbody></table>`);
+  paint("#bank-services", JSON.stringify([b.business_services, b.shared_providers]), `<table><thead><tr><th>Business service</th><th>Important</th><th>Depends on</th></tr></thead><tbody>${b.business_services.map(x =>
+    `<tr><td>${esc(x.name)}</td><td>${yesNo(x.important)}</td><td>${esc(x.providers.join(", "))}</td></tr>`).join("")}</tbody></table>
+    ${b.shared_providers.map(p => `<div class="flag" style="margin-top:8px">Concentration: ${esc(p.explanation)}</div>`).join("")}`);
+  paint("#bank-contracts", JSON.stringify(b.contracts), `<table><thead><tr><th>Provider</th><th>Service</th><th>Supports</th><th>Contract end</th><th>Material</th></tr></thead><tbody>${b.contracts.map(p =>
+    `<tr><td>${esc(p.name)}</td><td>${esc(p.service)}</td><td>${esc((p.supports || []).join(", ") || "–")}</td><td class="b-due">${esc(p.contract_end)}</td><td>${yesNo(p.material)}</td></tr>`).join("")}</tbody></table>`);
+  const kv = o => Object.entries(o).map(([k, v]) => `<div class="th"><b>${v}</b><div class="meta">${esc(words(k))}</div></div>`).join("") || '<span class="empty">None yet. Press Scan on the Dashboard.</span>';
+  paint("#bank-clients", JSON.stringify(b.clients), `<div class="meta" style="margin-bottom:6px">${b.clients.applicants} applications on record, ${b.clients.on_file} client files. <a href="#" onclick="show('kyc');return false">Open the KYC register</a></div>
+    <div class="hist-title">By risk rating</div><div class="thresholds" style="margin:6px 0 10px">${kv(b.clients.by_rating)}</div>
+    <div class="hist-title">By lifecycle stage</div><div class="thresholds" style="margin-top:6px">${kv(b.clients.by_stage)}</div>`);
+  paint("#bank-controls", JSON.stringify([b.policy, b.controls]), `<div class="meta" style="margin-bottom:6px">Live policy: <b>${esc(b.policy)}</b></div><table><thead><tr><th>Control</th><th>Default</th><th>In force</th><th>¶</th></tr></thead><tbody>${b.controls.map(c =>
+    `<tr><td>${esc(fieldNames[c.field] || words(c.field))}</td><td class="meta">${esc(fmt(c.baseline))}</td><td>${JSON.stringify(c.baseline) !== JSON.stringify(c.live) ? `<b>${esc(fmt(c.live))}</b>` : esc(fmt(c.live))}</td><td class="b-src">${esc(c.paragraph)}</td></tr>`).join("")}</tbody></table>`);
+  paint("#bank-library", JSON.stringify(b.library), `<table><thead><tr><th>Document</th><th>Status</th><th>Journey</th><th>Impact</th><th>In force</th></tr></thead><tbody>${b.library.map(d =>
+    `<tr class="pick" onclick="$('#doc').value='${esc(d.document_id)}';show('reg')"><td><b>${esc(d.document_id)}</b>${d.title ? `<div class="meta">${esc(d.title)}</div>` : ""}</td><td>${esc(d.status)}</td>
+      <td>${d.journey === "sign_off" ? "Sign-off only" : d.journey ? "Control change" : "–"}</td><td>${esc(d.impact || "–")}</td><td class="b-due">${esc(d.effective_date || "–")}</td></tr>`).join("")}</tbody></table>`);
+}
+
 function renderAction(a) {
+  if (a.pillar === "reg" && a.journey) return renderRegAction(a);
   return `<div class="action"><div class="top"><span class="pill p-${esc(a.pillar)}">${esc(a.pillar.toUpperCase())}</span><b>${esc(a.kind)}</b>
       <span class="subj">${a.customer_id ? `<a href="#" onclick="pick('${esc(a.customer_id)}');return false">${esc(a.subject)}</a>` : esc(a.subject)}</span>
       <span class="spacer"></span><span class="meta">${esc(a.id)}</span></div>
@@ -321,13 +478,17 @@ async function poll() {
   paint("#actions", JSON.stringify(state.actions), state.actions.length ? state.actions.map(renderAction).join("") : '<div class="empty">Nothing waiting. Press Scan to look for new work.</div>');
 
   renderRegister();
+  if (tab === "bank") loadBank().catch(e => { $("#err").textContent = "Could not load the bank view: " + e; });
   paint("#customer", JSON.stringify([state.customer, busy]), renderCustomer(state.customer));
   paint("#tm", JSON.stringify([state.card_clients, busy, state.actions.map(a => a.id)]), state.card_clients.map(renderCard).join(""));
 
-  if (paint("#doc", JSON.stringify(state.documents), state.documents.map(d => `<option>${esc(d)}</option>`).join(""))) $("#doc").value = state.documents.includes("PS26-7") ? "PS26-7" : state.documents[0];
-  paint("#briefText", JSON.stringify(state.brief), state.brief ? `<div class="meta" style="margin-bottom:6px">${esc(state.brief.document)}, written by the regulatory agent</div><pre class="brief">${esc(state.brief.text)}</pre>` : '<span class="empty">No document briefed yet.</span>');
-  const ch = state.policy_changes, waiting = state.actions.find(a => a.pillar === "reg");
-  paint("#policy", JSON.stringify([ch, waiting]), (waiting ? `<div class="flag" style="margin-bottom:8px">A policy change is waiting for approval on the Dashboard: ${esc(waiting.subject)}</div>` : "")
+  const titles = state.document_titles || {};
+  if (paint("#doc", JSON.stringify([state.documents, titles]), state.documents.map(d => `<option value="${esc(d)}">${esc(d)}: ${esc(titles[d] || "")}</option>`).join(""))) $("#doc").value = state.documents.includes("PS26-7") ? "PS26-7" : state.documents[0];
+  paintBrief();
+  const ch = state.policy_changes, regWaiting = state.actions.filter(a => a.pillar === "reg"), waiting = regWaiting[0];
+  paint("#policy", JSON.stringify([ch, regWaiting]), regWaiting.map(w => `<div class="flag" style="margin-bottom:8px">${w.journey === "sign_off"
+      ? `A brief is waiting for sign-off on the Dashboard: ${esc(w.subject)}. It changes no KYC or monitoring control.`
+      : `A policy change is waiting for approval on the Dashboard: ${esc(w.subject)}`}</div>`).join("")
     + (ch.length ? `<div class="meta">Live, from <b>${esc(state.policy.source_document)}</b>. These change how KYC rates clients and how payments are monitored.</div>
       <table class="changes"><tbody>${ch.map(c => `<tr><td>${esc(fieldNames[c.field] || c.field)}${para(c.paragraph)}</td><td class="after">${esc(fmt(c.after))}</td></tr>`).join("")}</tbody></table>`
       : '<span class="empty">Baseline: the default controls. No regulatory change is live.</span>'));

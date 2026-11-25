@@ -44,6 +44,7 @@ else:
 FIRM = memory.DEFAULT_FIRM
 DOCS_DIR = REPO_ROOT / "03_document_summary_agent/data/documents"
 DOCUMENTS = sorted(p.stem for p in DOCS_DIR.glob("*.md"))
+DOC_TITLES = {p.stem: p.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip() for p in DOCS_DIR.glob("*.md")}
 OFFLINE_DOCUMENTS = ["PS26-7"]   # the only regulation the scripted model has an answer for
 
 
@@ -83,7 +84,7 @@ _monitored: dict[str, tuple] = {}   # customer_id -> (rating, policy) their paym
 RUNNABLE = {l["customer_id"] for l in memory._links()} if OFFLINE else set(APPLICANTS)
 STATIC = Path(__file__).parent / "static"
 
-app = FastAPI(title="FinCrime Control Tower")
+app = FastAPI(title="Compliance Control Tower")
 _lock = threading.Lock()
 _status = {"running": None, "error": None}
 _chat = {"log": [], "thread": uuid.uuid4().hex, "agent": None}
@@ -165,14 +166,21 @@ def _actions() -> list[dict]:
         if q.get("reason"):
             detail.insert(0, f"Agent suggests {q.get('agent_decision')} (score {q.get('risk_score')}, confidence "
                              f"{q.get('confidence')}): {q['reason']}")
+        sign_off = q.get("journey") == "sign_off"
         kind = {"kyc": "New account" if cid and not _onboarded(cid) else "Existing client: KYC decision",
-                "tm": "Payment review", "reg": "Policy change"}[r["pillar"]]
+                "tm": "Payment review", "reg": "Brief sign-off" if sign_off else "Policy change"}[r["pillar"]]
         subject = APPLICANTS.get(cid, "") if cid else q.get("document_id", "")
         if q.get("transaction_id"):
             subject += f" · {q['transaction_id']}"
-        out.append({"id": r["case_id"], "pillar": r["pillar"], "kind": kind, "subject": subject, "customer_id": cid,
-                    "question": q.get("question", "Decision needed"), "detail": detail,
-                    "reject": "block" if r["pillar"] == "tm" else "reject"})
+        action = {"id": r["case_id"], "pillar": r["pillar"], "kind": kind, "subject": subject, "customer_id": cid,
+                  "question": q.get("question", "Decision needed"), "detail": detail,
+                  "reject": "block" if r["pillar"] == "tm" else "reject"}
+        if r["pillar"] == "reg":  # the 03 reviewer summary and the journey, for the reviewer card
+            action.update(journey=q.get("journey", "control_change"), changes=q.get("changes", []),
+                          review={k: q[k] for k in ("title", "summary", "review", "key_dates", "counts") if k in q},
+                          approve_label="Sign off" if sign_off else "Approve changes",
+                          reject_label="Send back" if sign_off else "Reject changes")
+        out.append(action)
     for f in memory.open_refresh_flags(store):
         cid = f["customer_id"]
         if not memory.reviews_for_customer(store, cid):
@@ -295,6 +303,65 @@ def reference():
                                            for p in firm.get("providers", [])]}}
 
 
+@app.get("/api/bank")
+def bank():
+    """Everything recorded about the bank in one read-only view: profile, senior managers, important business
+    services, third parties and contracts, clients, controls in force and the regulation library."""
+    store = _store()
+    facts_tool = reg.load_project(reg.FOLDER)["tools.firm_facts"]
+    context = facts_tool.bank_context(FIRM)
+    size = facts_tool.get_firm_facts(DOCUMENTS[0], FIRM)["small_firm_test"] if DOCUMENTS else {}
+    raw = REFERENCE["firm"]
+    contracts = [{**REFERENCE["providers"].get(p["provider_id"], {}), **p,
+                  "supports": [s["name"] for s in context["business_services"]
+                               if REFERENCE["providers"].get(p["provider_id"], {}).get("name") in s["providers"]]}
+                 for p in raw.get("providers", [])]
+
+    records = memory.clients(store)
+    ratings = {}
+    for c in records:
+        risk = memory.get_customer_risk(store, c["customer_id"]) or {}
+        ratings[risk.get("rating") or "not rated"] = ratings.get(risk.get("rating") or "not rated", 0) + 1
+    stages = {}
+    for c in records:
+        stages[c["stage"]] = stages.get(c["stage"], 0) + 1
+
+    live = reg.active_policy(store, FIRM)
+    controls = [{"field": f, "baseline": getattr(BASELINE, f), "live": getattr(live, f),
+                 "paragraph": live.citations.get(f, "")}
+                for f in type(live).model_fields if f not in ("citations", "source_document")]
+
+    library = []
+    all_reviews = memory.reviews(store, None)
+    for doc in DOCUMENTS:
+        cases = [r for r in all_reviews if r["pillar"] == "reg" and r["question"].get("document_id") == doc]
+        case = cases[-1] if cases else None
+        if live.source_document == doc:
+            status = "Live policy"
+        elif case is None:
+            status = "Not briefed"
+        elif case["status"] == "open":
+            status = "Awaiting sign-off" if case["question"].get("journey") == "sign_off" else "Awaiting approval"
+        else:
+            decision = (case.get("answer") or {}).get("decision")
+            signed = case["question"].get("journey") == "sign_off"
+            status = ("Signed off" if signed else "Approved") if decision == "approve" else \
+                     ("Sent back" if signed else "Rejected")
+        review = (case or {}).get("question", {}).get("review") or {}
+        library.append({"document_id": doc, "status": status, "title": DOC_TITLES.get(doc, doc),
+                        "journey": (case or {}).get("question", {}).get("journey"),
+                        "classification": review.get("classification"), "impact": review.get("impact"),
+                        "effective_date": review.get("effective_date")})
+
+    return {"firm": {k: raw.get(k) for k in ("firm_id", "name", "type", "customers", "total_assets", "notes")},
+            "small_firm_test": size, "senior_managers": context["senior_managers"],
+            "business_services": context["business_services"], "shared_providers": context["shared_providers"],
+            "gaps": context["gaps"], "contracts": contracts,
+            "clients": {"applicants": len(APPLICANTS), "on_file": len(records), "by_rating": ratings,
+                        "by_stage": stages},
+            "policy": live.source_document, "controls": controls, "library": library}
+
+
 @app.post("/api/chat")
 def chat(question: Question):
     if OFFLINE:
@@ -361,7 +428,12 @@ def state(after: int = 0, customer: str = ""):
             "policy": risk.get("policy"), "reasons": risk.get("reasons", []),
             "has_card": bool(memory.user_for_customer(cid)), "runnable": cid in RUNNABLE})
     actions = _actions()
-    brief = next((e for e in reversed(memory.events(store)) if e["title"].startswith("Brief ready for ")), None)
+    briefs = {}  # the latest brief for each document, so every briefed regulation keeps its own summary
+    for e in memory.events(store):
+        if e["title"].startswith("Brief ready for "):
+            doc = e["title"].removeprefix("Brief ready for ")
+            briefs[doc] = {"document": doc, "title": DOC_TITLES.get(doc, doc), "text": e["detail"]["brief"]}
+    brief = briefs[doc] if briefs else None  # the most recent one, as before
     live = policy.source_document
     return {
         "offline": OFFLINE, "status": _status, "policy": policy.model_dump(),
@@ -378,8 +450,9 @@ def state(after: int = 0, customer: str = ""):
         "customer": _detail(customer) if customer in APPLICANTS else None,
         "card_clients": [_detail(c["customer_id"]) for c in register if c["has_card"]],
         "documents": OFFLINE_DOCUMENTS if OFFLINE else DOCUMENTS,
-        "brief": {"document": brief["title"].removeprefix("Brief ready for "), "text": brief["detail"]["brief"]}
-        if brief else None,
+        "document_titles": DOC_TITLES,
+        "brief": brief,
+        "briefs": briefs,
         "affected": [{"customer_id": c["customer_id"], "name": c["name"], "policy": c["policy"], "rating": c["rating"]}
                      for c in register if c["policy"] and c["policy"] != live],
         "events": memory.events(store, after), "langsmith_project": os.environ.get("LANGSMITH_PROJECT", ""),
