@@ -21,6 +21,32 @@ from ...domain.models import RegulatoryPassage, RegulatorySource
 MCPCaller = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 
+class MCPToolError(RuntimeError):
+    """An MCP tool call failed. Its message must never be used as regulatory evidence."""
+
+
+def _raise_if_error(raw_result: Any) -> None:
+    """Raise if the server reported a failure (`is_error` in mcp 2.x, `isError` in mcp 1.x and JSON)."""
+    if isinstance(raw_result, dict):
+        failed = raw_result.get("is_error") is True or raw_result.get("isError") is True
+        content = raw_result.get("content") if failed else None
+    else:
+        failed = (
+            getattr(raw_result, "is_error", None) is True
+            or getattr(raw_result, "isError", None) is True
+        )
+        content = getattr(raw_result, "content", None) if failed else None
+    if not failed:
+        return
+    blocks = content if isinstance(content, list) else [content]
+    texts = [
+        block.get("text") if isinstance(block, dict) else getattr(block, "text", block)
+        for block in blocks
+    ]
+    message = "\n".join(str(text) for text in texts if text)
+    raise MCPToolError(message or "The MCP tool reported an error without a message.")
+
+
 @dataclass(frozen=True, slots=True)
 class MCPServerConfig:
     """Connection settings for an external MCP server (stdio or Streamable HTTP)."""
@@ -59,7 +85,11 @@ def parse_mcp_passages(
       - MCP `CallToolResult` objects with `.content` blocks (text / JSON)
       - Python lists of dicts or strings
       - Single dicts or plain-text markdown strings
+
+    Raises `MCPToolError` if the result is an error, so that a failed search cannot be mistaken
+    for evidence, or for a search that found no rules.
     """
+    _raise_if_error(raw_result)
     payload = raw_result
 
     # Unwrap official MCP SDK CallToolResult-like objects if present
