@@ -253,7 +253,8 @@ def make_code_remediation_outbound(
         repo_slug = ctx.get("repo_slug")
         repo_url = str(ctx.get("repo_url") or (f"https://github.com/{repo_slug}" if repo_slug else ""))
         base_branch = str(ctx.get("default_branch") or "main")
-        create_pr = bool(ctx.get("create_pr", False))
+        output_type = state.get("output_type", "report")
+        create_pr = output_type == "remediation_pr"
         draft_pr = bool(ctx.get("draft_pr", False))
 
         base_metadata: dict[str, Any] = {
@@ -273,6 +274,7 @@ def make_code_remediation_outbound(
             return {
                 "deliverable_result": DeliverableResult(
                     module_name="codebase_review",
+                    output_type=output_type,
                     status="completed",
                     summary=(
                         f"{report.overall_verdict}: {len(report.findings)} finding(s) across "
@@ -287,6 +289,7 @@ def make_code_remediation_outbound(
             return {
                 "deliverable_result": DeliverableResult(
                     module_name="codebase_review",
+                    output_type=output_type,
                     status="completed",
                     summary=(
                         f"{report.overall_verdict}: 0 remediable file finding(s) for {report.target_id}. "
@@ -303,6 +306,7 @@ def make_code_remediation_outbound(
                 return {
                     "deliverable_result": DeliverableResult(
                         module_name="codebase_review",
+                        output_type=output_type,
                         status="completed",
                         summary=(
                             f"{report.overall_verdict}: {len(report.findings)} finding(s) for {report.target_id}. "
@@ -365,6 +369,7 @@ def make_code_remediation_outbound(
                     return {
                         "deliverable_result": DeliverableResult(
                             module_name="codebase_review",
+                            output_type=output_type,
                             status="completed",
                             summary=(
                                 f"{report.overall_verdict}: {len(report.findings)} finding(s) for {report.target_id}. "
@@ -410,6 +415,7 @@ def make_code_remediation_outbound(
             return {
                 "deliverable_result": DeliverableResult(
                     module_name="codebase_review",
+                    output_type=output_type,
                     status="failed",
                     summary=f"Saved local report; remediation PR failed: {exc}",
                     artifacts=artifacts,
@@ -426,6 +432,7 @@ def make_code_remediation_outbound(
         return {
             "deliverable_result": DeliverableResult(
                 module_name="codebase_review",
+                output_type=output_type,
                 status="completed",
                 summary=(
                     f"{report.overall_verdict}: {len(report.findings)} finding(s) across "

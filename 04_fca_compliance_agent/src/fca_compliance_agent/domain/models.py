@@ -13,6 +13,8 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 SourceType = Literal["pr_review", "codebase", "product_spec", "custom"]
+# What the caller wants at the end. The inbound adapter decides it, and the outbound adapter delivers exactly that.
+OutputType = Literal["report", "pr_comment", "remediation_pr", "pdf_report"]
 Severity = Literal["critical", "high", "medium", "low", "info"]
 FindingStatus = Literal["non_compliant", "potential_breach", "needs_review", "observation"]
 ComplianceVerdict = Literal[
@@ -248,6 +250,9 @@ class DeliverableResult(BaseModel):
 
     module_name: str
     status: Literal["completed", "aborted_by_reviewer", "skipped", "failed"]
+    output_type: OutputType | None = Field(
+        default=None, description="The output that was asked for. `status` and `metadata` say whether it was delivered."
+    )
     summary: str
     artifacts: list[str] = Field(
         default_factory=list,
