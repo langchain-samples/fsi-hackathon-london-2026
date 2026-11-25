@@ -9,6 +9,28 @@ and LangSmith. Each topic has its own folder and README:
 | [`01_kyc_agent`](01_kyc_agent/README.md) | KYC onboarding | A LangGraph agent that extracts application details, screens against sanctions and PEP lists, and scores risk |
 | [`02_transaction_monitoring_agent`](02_transaction_monitoring_agent/README.md) | Transaction monitoring | A deep agent with memory and human review, then evaluated and improved with LangSmith |
 | [`03_document_summary_agent`](03_document_summary_agent/README.md) | Compliance brief | A LangGraph map-reduce workflow that summarises a long regulatory document into a reviewable brief |
+| [`04_fca_compliance_agent/handbook_rag`](04_fca_compliance_agent/handbook_rag/README.md) | FCA Handbook RAG | Search over the FCA Handbook with Qdrant, for agents that assess pull requests |
+
+## Quick Start (`04_fca_compliance_agent` + ReguLens UI)
+
+Run everything end-to-end with a single command from the repository root:
+
+```bash
+make run
+```
+
+`make run` automatically:
+1. Installs `uv` if needed and syncs all workspace packages and extras (`mcp`, `handbook-rag`, `dev`).
+2. Checks `.env` and `.env.fca` — prompting interactively for your `FCA_HANDBOOK_API_TOKEN` (and persisting it to `.env.fca`) if the FCA Handbook has not been downloaded/indexed yet.
+3. Downloads and ingests the FCA Handbook into Qdrant (skipping automatically once indexed).
+4. Clones and configures `natchainsix/natchainsixagent-ui` in `agent-ui/` wired to the real compliance agent HTTP API.
+5. Starts and health-checks all 4 services (`Ctrl+C` shuts them down cleanly):
+   - **ReguLens Agent UI**: `http://127.0.0.1:8000`
+   - **Compliance Agent HTTP API**: `http://127.0.0.1:8002` (`/health`, `/api/targets`, `/api/findings`, `/api/runs`, `/review`)
+   - **FCA Handbook RAG MCP**: `http://127.0.0.1:8765/mcp`
+   - **Consumer Credit Act 1974 MCP**: `http://127.0.0.1:8001/mcp`
+
+Other targets: `make setup` (setup & ingest only), `make ingest` (FCA Handbook RAG download & ingest), `make test` (run all compliance tests).
 
 ## Prerequisites
 

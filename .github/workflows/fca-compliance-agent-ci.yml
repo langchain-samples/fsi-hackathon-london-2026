@@ -1,0 +1,59 @@
+name: FCA Compliance Agent CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test & Verify Hexagonal Boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install fca-compliance-agent dependencies
+        run: uv sync --frozen --package fca-compliance-agent --extra mcp
+
+      - name: Run unit, integration, and hexagonal boundary tests
+        run: uv run --no-sync --package fca-compliance-agent python -m unittest discover -s 04_fca_compliance_agent/tests -v
+
+      - name: Verify run scripts, MCP CLI, and compiled LangGraph agent entrypoints
+        run: |
+          bash -n 04_fca_compliance_agent/scripts/run.sh
+          ./04_fca_compliance_agent/scripts/run.sh --help
+          uv run --no-sync --package fca-compliance-agent fca-regulatory-mcp --help
+          test -f 04_fca_compliance_agent/scripts/run.ps1
+          test -f 04_fca_compliance_agent/scripts/run.cmd
+          uv run --no-sync --package fca-compliance-agent python -c "
+          from fca_compliance_agent.agent import (
+              pr_review_agent,
+              codebase_review_agent,
+              product_spec_agent,
+              compliance_agent,
+          )
+          for name, graph in [
+              ('pr_review_agent', pr_review_agent),
+              ('codebase_review_agent', codebase_review_agent),
+              ('product_spec_agent', product_spec_agent),
+              ('compliance_agent', compliance_agent),
+          ]:
+              assert hasattr(graph, 'ainvoke'), f'{name} missing ainvoke'
+          print('All compliance agent graphs compiled cleanly.')
+          "

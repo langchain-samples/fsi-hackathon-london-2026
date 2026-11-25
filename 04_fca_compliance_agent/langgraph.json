@@ -1,0 +1,10 @@
+{
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "fca_compliance": "fca_compliance_agent.agent:compliance_agent"
+  },
+  "env": "../.env",
+  "python_version": "3.13"
+}
