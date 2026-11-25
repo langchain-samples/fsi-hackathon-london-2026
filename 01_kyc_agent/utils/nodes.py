@@ -1,3 +1,5 @@
+import json
+
 from pydantic import BaseModel, Field
 from typing import Literal
 
@@ -102,6 +104,12 @@ def human_review(state: MyAgentState) -> dict:
             "question": "Approve or reject this customer? Reply with {'decision': ..., 'notes': ...}",
         }
     )
+    # Studio / the API can deliver the resume value as a string, so accept a JSON string or a bare decision word.
+    if isinstance(answer, str):
+        try:
+            answer = json.loads(answer)
+        except json.JSONDecodeError:
+            answer = {"decision": answer.strip().strip("\"'")}
     return {"decision": answer["decision"], "reviewer": "human", "reviewer_notes": answer.get("notes", "")}
 
 
