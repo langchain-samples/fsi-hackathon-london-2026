@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import os
 
+from .adapters.github_pr import build_github_pr_review_module
 from .adapters.llm import LangChainComplianceAnalyzer
 from .adapters.outbound import (
     build_codebase_review_module,
-    build_pr_review_module,
     build_product_spec_module,
 )
 from .adapters.regulatory import (
@@ -68,7 +68,7 @@ def build_default_core_subgraph(
 _default_core = build_default_core_subgraph()
 
 pr_review_agent = build_pipeline_for_module(
-    build_pr_review_module(),
+    build_github_pr_review_module(),
     core_subgraph=_default_core,
 )
 codebase_review_agent = build_pipeline_for_module(
