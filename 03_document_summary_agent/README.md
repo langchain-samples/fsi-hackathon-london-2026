@@ -90,7 +90,37 @@ Then send it a message such as `Summarise document PS26-4 for FIRM-001`. Or call
 from agent import agent
 
 result = agent.invoke({"messages": [{"role": "user", "content": "Summarise document PS26-4 for FIRM-001"}]})
-print(result["messages"][-1].text)
+brief = result["structured_response"]   # a Brief, see below
+```
+
+### The output: a `Brief`
+
+Every run returns the same fixed shape (`brief.py`), following the team's Inputs -> Agent -> Output template:
+
+```json
+{
+  "document_id": "PS26-7",
+  "firm_id": "FIRM-001",
+  "title": "Policy Statement PS26/7: ...",
+  "summary": "What the document is about, when it takes effect, and what it means for this firm.",
+  "items": [
+    {"id": 1, "summary": "Apply EDD to PEPs, their family members and close associates.", "source": "PS26-7 para 4.1"},
+    {"id": 2, "summary": "...", "source": "PS26-7 para 4.2"}
+  ]
+}
+```
+
+One item per obligation, numbered from 1, each citing its paragraph. The control tower reads it as JSON through
+`contracts.brief_from_result`, so nothing on its side needs to change.
+
+### Checking the output
+
+`brief_evals.py` scores the Brief with plain-code checks (ids in order, sources well formed and real, must-have
+paragraphs found, key numbers and deadlines kept word for word, nothing cited from non-obligation sections):
+
+```bash
+uv run python brief_evals.py --local    # print the scores here
+uv run python brief_evals.py            # run as a LangSmith dataset + experiment
 ```
 
 Because `agent.py` imports `model` from `utils.models`, the model your `.env` selects is the one the agent uses
@@ -105,6 +135,8 @@ everywhere: in the notebook, in Studio, and when deployed.
 ├── langgraph.json                  (registers agent.py's `agent` for langgraph dev)
 ├── agent.py                        (the main deep agent, exported as `agent`)
 ├── instructions.md                 (the main agent's system prompt)
+├── brief.py                        (the Brief: the agent's fixed output shape)
+├── brief_evals.py                  (pass/fail checks on the Brief, local or in LangSmith)
 ├── sub_agent.py                    (the section-summariser sub-agent and its SectionSummary output)
 ├── sub_agent_instructions.md       (the sub-agent's system prompt)
 ├── tools/
