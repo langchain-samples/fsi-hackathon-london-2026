@@ -21,7 +21,7 @@ ComplianceVerdict = Literal[
     "non_compliant",
     "requires_manual_review",
 ]
-RegulatorySource = Literal["fca_handbook", "consumer_credit_act"]
+RegulatorySource = Literal["fca_handbook", "consumer_credit_act", "uk_gdpr"]
 
 SEVERITY_RANK: dict[Severity, int] = {
     "critical": 0,
@@ -105,7 +105,7 @@ class AnalysisInput(BaseModel):
     title: str
     summary: str = ""
     regulatory_scope: list[str] = Field(
-        default_factory=lambda: ["CONC", "PRIN 2A", "Consumer Credit Act 1974"]
+        default_factory=lambda: ["CONC", "PRIN 2A", "UK GDPR", "Consumer Credit Act 1974"]
     )
     units: list[AnalysisUnit] = Field(default_factory=list)
 
