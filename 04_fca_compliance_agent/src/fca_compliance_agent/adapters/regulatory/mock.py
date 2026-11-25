@@ -139,6 +139,10 @@ _CCA_CORPUS: list[RegulatoryPassage] = [
 ]
 
 
+# Public read-only view of the FCA mock corpus, used by the regulatory MCP server's search index.
+FCA_CORPUS: tuple[RegulatoryPassage, ...] = tuple(_FCA_CORPUS)
+
+
 def _tokens(text: str) -> set[str]:
     return {t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) >= 2}
 

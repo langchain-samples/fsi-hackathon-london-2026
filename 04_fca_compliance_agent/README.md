@@ -44,6 +44,29 @@ To enable real MCP server connectivity (for the FCA Handbook RAG and Consumer Cr
 uv sync --all-packages --extra mcp
 ```
 
+## Regulatory MCP Server
+
+`fca-regulatory-mcp` serves the FCA Handbook and Consumer Credit Act lookups over MCP, using the tool names the agent's
+MCP adapters expect (`search_fca_handbook`, `get_fca_rule`, `query_consumer_credit_act`,
+`get_consumer_credit_act_document`):
+
+```bash
+uv sync --all-packages --extra mcp
+uv run fca-regulatory-mcp                      # stdio: the agent spawns it as a subprocess
+uv run fca-regulatory-mcp --http --port 8001   # Streamable HTTP
+```
+
+Connect the agent to the HTTP server with `FCA_MCP_URL=http://127.0.0.1:8001/mcp` and `CCA_MCP_URL=http://127.0.0.1:8001/mcp`.
+The HTTP server exposes all four tools at the same URL. Set both variables to that URL.
+
+- **CCA content** is the Act text in the repo-root `cca.md`. Search returns the best passage from each matching section
+  (about 1,200 characters, with a `part` field such as `2 of 5`), each with the reference `CCA 1974 s.<number>`.
+  `get_consumer_credit_act_document` returns a whole section.
+- **Search** uses BM25 with light stemming, so `withdrawal` and `withdraw` match. An empty result means nothing matched,
+  not that the rule does not apply.
+- **FCA content** is the mock Handbook corpus from `MockFCAHandbookAdapter`, because the Handbook text is not in this
+  repo yet. Those passages carry `"corpus": "mock"`.
+
 ## Swapping Context Modules
 
 ```python
