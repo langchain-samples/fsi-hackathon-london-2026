@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Any, Literal
 
 from langgraph.graph import END
@@ -20,6 +21,7 @@ from ..domain.models import (
     Finding,
     FindingsReport,
     HumanReviewDecision,
+    RegulatoryCitation,
     RegulatoryPassage,
     TriagedUnit,
 )
@@ -37,6 +39,44 @@ def _dedupe_passages(passages: list[RegulatoryPassage]) -> list[RegulatoryPassag
             seen.add(key)
             unique.append(passage)
     return unique
+
+
+def _norm_ref(reference: str) -> str:
+    """'CCA 1974 s.87 (and s.88 cure period)' -> 'CCA 1974 S.87'; keeps 'Art 5(1)(c)' intact."""
+    return " ".join(re.sub(r"\s+\(.*?\)", "", reference).split()).upper()
+
+
+def _ground_findings(
+    findings: list[Finding],
+    passages: list[RegulatoryPassage],
+) -> list[Finding]:
+    """Keep only citations that match a retrieved passage; flag findings left with none.
+
+    The model is told to cite only retrieved rules; this enforces it in code so a
+    hallucinated or paraphrased rule reference never reaches the report.
+    """
+    by_ref = {_norm_ref(p.reference): p for p in passages}
+
+    def ground(citations: list[RegulatoryCitation]) -> list[RegulatoryCitation]:
+        kept = []
+        for c in citations:
+            p = by_ref.get(_norm_ref(c.reference))
+            if p is not None:
+                kept.append(c.model_copy(update={"reference": p.reference, "excerpt": c.excerpt or p.text[:300], "url": p.url}))
+        return kept
+
+    grounded: list[Finding] = []
+    for f in findings:
+        fca, cca = ground(f.fca_citations), ground(f.cca_citations)
+        update: dict[str, Any] = {"fca_citations": fca, "cca_citations": cca}
+        if not fca and not cca:
+            update |= {
+                "status": "needs_review",
+                "confidence": min(f.confidence, 0.4),
+                "description": f.description + " [No cited rule matched the retrieved regulatory text.]",
+            }
+        grounded.append(f.model_copy(update=update))
+    return grounded
 
 
 def _dedupe_and_rank_findings(findings: list[Finding]) -> list[Finding]:
@@ -190,6 +230,7 @@ def make_analyze_unit_node(
             fca_passages=fca_passages,
             cca_passages=cca_passages,
         )
+        findings = _ground_findings(findings, fca_passages + cca_passages)
 
         return {
             "unit_findings": findings,
