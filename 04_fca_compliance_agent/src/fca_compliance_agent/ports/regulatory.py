@@ -31,6 +31,21 @@ class FCAHandbookPort(Protocol):
 
 
 @runtime_checkable
+class FCAScopedSearchPort(Protocol):
+    """Optional: an `FCAHandbookPort` that also says which requested sourcebooks it could not search."""
+
+    async def search_rules_in_scope(
+        self,
+        query: str,
+        *,
+        sourcebooks: list[str] | None = None,
+        top_k: int = 5,
+    ) -> RegulatorySearch:
+        """Whole rules, as `search_rules` gives, and any requested sourcebook that is not in the index."""
+        ...
+
+
+@runtime_checkable
 class FCAHandbookResearchPort(Protocol):
     """What the Handbook RAG offers a reviewing agent: search widely, read in depth, check the quote."""
 

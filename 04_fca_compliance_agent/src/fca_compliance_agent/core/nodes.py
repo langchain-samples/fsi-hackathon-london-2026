@@ -23,11 +23,12 @@ from ..domain.models import (
     HumanReviewDecision,
     RegulatoryCitation,
     RegulatoryPassage,
+    RegulatorySearch,
     TriagedUnit,
 )
 from ..domain.state import CoreAnalysisState, PipelineState, UnitAnalysisState
 from ..ports.llm import ComplianceAnalyzerPort
-from ..ports.regulatory import ConsumerCreditActPort, FCAHandbookPort
+from ..ports.regulatory import ConsumerCreditActPort, FCAHandbookPort, FCAScopedSearchPort
 
 
 def _dedupe_passages(passages: list[RegulatoryPassage]) -> list[RegulatoryPassage]:
@@ -114,6 +115,23 @@ def _compute_verdict(findings: list[Finding]) -> ComplianceVerdict:
     return "compliant_with_observations"
 
 
+def _norm_scope(name: str) -> str:
+    return " ".join(name.upper().split())
+
+
+def _is_cca(name: str) -> bool:
+    """The Consumer Credit Act is searched through its own port, not the FCA Handbook."""
+    return _norm_scope(name).startswith(("CONSUMER CREDIT ACT", "CCA"))
+
+
+async def _search_fca(
+    port: FCAHandbookPort, query: str, scope: list[str] | None, top_k: int
+) -> RegulatorySearch:
+    if isinstance(port, FCAScopedSearchPort):
+        return await port.search_rules_in_scope(query, sourcebooks=scope, top_k=top_k)
+    return RegulatorySearch(passages=await port.search_rules(query, sourcebooks=scope, top_k=top_k))
+
+
 def make_triage_node(analyzer_port: ComplianceAnalyzerPort):
     """Create the `triage_units` node that filters units and drafts regulatory queries."""
 
@@ -190,7 +208,7 @@ def make_analyze_unit_node(
         for q in fca_queries:
             executed_queries.append(f"FCA:{q}")
             fca_tasks.append(
-                fca_port.search_rules(q, sourcebooks=scope, top_k=max_passages_per_query)
+                _search_fca(fca_port, q, scope, max_passages_per_query)
             )
 
         cca_tasks = []
@@ -213,7 +231,7 @@ def make_analyze_unit_node(
         )
 
         fca_passages = _dedupe_passages(
-            [p for batch in fca_results for p in batch]
+            [p for found in fca_results for p in found.passages]
         )
         cca_passages = _dedupe_passages(
             [p for batch in cca_results for p in batch]
@@ -235,6 +253,7 @@ def make_analyze_unit_node(
         return {
             "unit_findings": findings,
             "queries_executed": executed_queries,
+            "scope_not_searched": [name for found in fca_results for name in found.not_in_index],
         }
 
     return analyze_unit
@@ -251,6 +270,12 @@ def make_synthesize_report_node(analyzer_port: ComplianceAnalyzerPort):
 
         findings = _dedupe_and_rank_findings(raw_findings)
         verdict = _compute_verdict(findings)
+
+        missing = {_norm_scope(name) for name in state.get("scope_not_searched", [])}
+        fca_scope = [name for name in analysis_input.regulatory_scope if not _is_cca(name)]
+        not_searched = [name for name in fca_scope if _norm_scope(name) in missing]
+        if not_searched and len(not_searched) == len(fca_scope) and verdict != "non_compliant":
+            verdict = "requires_manual_review"  # no FCA rule was looked at, so nothing can be said to comply
         executive_summary = await analyzer_port.synthesize_executive_summary(
             analysis_input=analysis_input,
             findings=findings,
@@ -271,6 +296,7 @@ def make_synthesize_report_node(analyzer_port: ComplianceAnalyzerPort):
             units_triaged_in=units_triaged_in,
             units_skipped=units_skipped,
             regulatory_queries_executed=queries,
+            scope_not_searched=not_searched,
         )
         return {"findings_report": report}
 

@@ -150,6 +150,8 @@ def render_codebase_markdown(report: FindingsReport) -> str:
         report.executive_summary,
         "",
     ]
+    if warning := report.scope_warning():
+        lines += [warning, ""]
     for f in report.findings:
         loc = f.location
         if isinstance(loc, (CodeLocation, PullRequestDiffLocation)):
@@ -188,6 +190,7 @@ def render_remediation_pr_body(
         "### Executive Summary",
         report.executive_summary,
         "",
+        *([report.scope_warning(), ""] if report.scope_not_searched else []),
         "### Remediated Files",
     ]
     for path, summary in change_summaries.items():

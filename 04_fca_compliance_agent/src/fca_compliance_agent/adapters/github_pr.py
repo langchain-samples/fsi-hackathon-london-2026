@@ -133,6 +133,8 @@ def render_markdown(report: FindingsReport) -> str:
         report.executive_summary,
         "",
     ]
+    if warning := report.scope_warning():
+        lines += [warning, ""]
     for f in report.findings:
         loc = f.location
         where = f"`{loc.file_path}` L{loc.start_line}-{loc.end_line}" if isinstance(loc, PullRequestDiffLocation) else ""

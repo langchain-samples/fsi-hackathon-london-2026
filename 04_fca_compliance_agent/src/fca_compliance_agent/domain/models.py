@@ -218,6 +218,15 @@ class FindingsReport(BaseModel):
     units_triaged_in: int = 0
     units_skipped: int = 0
     regulatory_queries_executed: list[str] = Field(default_factory=list)
+    scope_not_searched: list[str] = Field(
+        default_factory=list,
+        description="Parts of the regulatory scope that the FCA index does not hold, so no rule in them was checked",
+    )
+
+    def scope_warning(self) -> str | None:
+        if not self.scope_not_searched:
+            return None
+        return f"**Not checked:** {', '.join(self.scope_not_searched)} (not in the FCA index that was searched)"
 
     def severity_counts(self) -> dict[Severity, int]:
         counts: dict[Severity, int] = {

@@ -76,6 +76,8 @@ class Manifest(BaseModel):
     snapshot_date: date
     source: str = Field(description="'fca-handbook-api', or 'fictional-sample' for made-up test data")
     attribution: str
+    sourcebooks: list[str] = Field(default_factory=list, description="What was downloaded; empty if not recorded")
+    chapters: list[str] = Field(default_factory=list, description="Only these chapter IDs; empty for all of them")
 
 
 class Snapshot(BaseModel):
