@@ -21,13 +21,13 @@ sub-agent per section, checked quotes) but is a separate project. Written 25 Nov
 | Decision | Choice |
 |---|---|
 | What a PR is | A GitHub pull request |
-| Scope | SYSC, PRIN, COBS and the Glossary |
+| Scope | SYSC, PRIN, COBS, CONC and the Glossary. CONC because the core agent reviews consumer credit and mostly cites it |
 | How the agent uses the RAG | As MCP tools, over HTTP. It never opens Qdrant or the FCA API itself |
 | Embeddings | Local model, so any demo PC can run it. It must be the same model for indexing and searching |
 | Where the code lives | `04_fca_compliance_agent/handbook_rag`, run as a separate MCP server. Its packages are the `handbook-rag` extra |
 | Tools | `search_fca_handbook`, `get_fca_section`, `check_citation` |
 | What is an agent | Only the FCA and CCA review of each change, built separately. Triage and the summary stay single LLM steps |
-| CONC (consumer credit) | **Open.** Suggested, because the core agent mostly cites it. The Consumer Credit Act itself is not in the Handbook |
+| Consumer Credit Act 1974 | Not in the Handbook. Served by `fca-regulatory-mcp` |
 | Qdrant storage | On-disk folder (`.qdrant`) on the demo laptop. No Qdrant Cloud or server for now |
 
 ### If we need to demo from a different PC
@@ -56,7 +56,7 @@ All the options, without running our own Qdrant server:
 - [ ] Cache, back off on rate limits, and resume after a failure.
 - [ ] Only use the API. Site terms 35.3 ban scraping; terms 25 and 26 allow reuse under OGL v3.0 with attribution.
 - [ ] Confirm what the API gives for effective dates, provision types, glossary links and future versions.
-- [ ] Start with SYSC, PRIN, COBS and the Glossary (sourcebooks agreed; firm type to be confirmed).
+- [ ] Start with SYSC, PRIN, COBS, CONC and the Glossary (sourcebooks agreed; firm type to be confirmed).
 
 ### Credentials
 
