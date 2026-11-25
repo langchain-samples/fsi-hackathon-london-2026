@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,7 @@ from fca_compliance_agent import (
 )
 from fca_compliance_agent.adapters import chat
 from fca_compliance_agent.adapters.chat import build_combined_graph, request_from_message, request_from_raw_input
+from fca_compliance_agent.adapters.outbound import code_remediator
 from fca_compliance_agent.adapters.output_type import InvalidInputError, decide_output_type
 from fca_compliance_agent.adapters.product_spec import MAX_UNIT_CHARS, build_product_spec_review_module, split_spec, write_pdf
 
@@ -140,6 +143,30 @@ class ChatTest(Combined):
         done = await self.resume("approve")
         self.assertEqual(len(self.github.created_prs), 1)
         self.assertIn(done["deliverable_result"].metadata["pr_url"], done["messages"][-1].text)
+
+    async def test_a_repo_review_keeps_file_and_git_work_off_the_event_loop(self) -> None:
+        """`langgraph dev` stops a run that does such work on the event loop's own thread."""
+        threads: dict[str, threading.Thread] = {}
+
+        def watch(owner: Any, name: str):
+            real = getattr(owner, name)
+
+            def watched(*args: Any, **kwargs: Any) -> Any:
+                threads[name] = threading.current_thread()
+                return real(*args, **kwargs)
+
+            return mock.patch.object(owner, name, watched)
+
+        calls = ("clone_repo", "checkout_new_branch", "commit_and_push", "create_pr")
+        helpers = ("render_codebase_markdown", "_read_inside", "_write_inside")
+        with contextlib.ExitStack() as stack:
+            for owner, names in ((self.github, calls), (code_remediator, helpers)):
+                for name in names:
+                    stack.enter_context(watch(owner, name))
+            await self.send(REPO)
+            await self.resume("approve")
+        self.assertEqual(set(threads), {*calls, *helpers})
+        self.assertNotIn(threading.current_thread(), threads.values())
 
     async def test_a_spec_becomes_a_pdf(self) -> None:
         (self.specs / "bnpl.md").write_text(SPEC)

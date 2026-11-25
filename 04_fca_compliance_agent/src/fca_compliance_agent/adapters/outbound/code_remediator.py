@@ -11,8 +11,11 @@ Defines the outbound BEHAVIOUR reacting to `FindingsReport`:
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
 import tempfile
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -228,6 +231,30 @@ def _group_findings_by_file(findings: list[Finding]) -> dict[str, list[Finding]]
     return grouped
 
 
+@asynccontextmanager
+async def _temporary_directory() -> AsyncIterator[Path]:
+    folder = await asyncio.to_thread(tempfile.TemporaryDirectory, prefix="fca-remediate-")
+    try:
+        yield Path(folder.name)
+    finally:
+        await asyncio.to_thread(folder.cleanup)
+
+
+def _read_inside(root: Path, rel_path: str) -> str | None:
+    """A file's text, or None if it is not a file inside `root`."""
+    target = (root / rel_path).resolve()
+    if not target.is_relative_to(root.resolve()) or not target.is_file():
+        return None
+    return target.read_text(encoding="utf-8", errors="replace")
+
+
+def _write_inside(root: Path, rel_path: str, text: str) -> None:
+    target = (root / rel_path).resolve()
+    if not target.is_relative_to(root.resolve()):
+        raise ValueError(f"{rel_path} is outside the repository checkout.")
+    target.write_text(text, encoding="utf-8")
+
+
 def make_code_remediation_outbound(
     *,
     remediator: CodeRemediator | None = None,
@@ -240,12 +267,15 @@ def make_code_remediation_outbound(
         report = state["findings_report"]
         ctx = state.get("adapter_context") or {}
         out_dir = reports_dir or REPORTS_DIR
-        out_dir.mkdir(parents=True, exist_ok=True)
         md_path = out_dir / f"{report.report_id}.md"
         json_path = out_dir / f"{report.report_id}.json"
 
-        md_path.write_text(render_codebase_markdown(report), encoding="utf-8")
-        json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        def save_reports() -> None:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            md_path.write_text(render_codebase_markdown(report), encoding="utf-8")
+            json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+
+        await asyncio.to_thread(save_reports)  # file and git work stays off the event loop, as `langgraph dev` requires
         artifacts = [str(md_path), str(json_path)]
 
         findings_by_file = _group_findings_by_file(report.findings)
@@ -325,20 +355,17 @@ def make_code_remediation_outbound(
         skipped_remediations: dict[str, str] = {}
 
         try:
-            with tempfile.TemporaryDirectory(prefix="fca-remediate-") as tmpdir:
-                tmp_path = Path(tmpdir)
+            async with _temporary_directory() as tmp_path:
                 clone_dir = tmp_path / "repo"
-                gh_client.clone_repo(repo_url, base_branch, clone_dir)
-                gh_client.checkout_new_branch(clone_dir, branch_name)
+                await asyncio.to_thread(gh_client.clone_repo, repo_url, base_branch, clone_dir)
+                await asyncio.to_thread(gh_client.checkout_new_branch, clone_dir, branch_name)
 
-                clone_root = clone_dir.resolve()
                 for rel_path, file_findings in findings_by_file.items():
-                    target_path = (clone_dir / rel_path).resolve()
-                    if not target_path.is_relative_to(clone_root) or not target_path.is_file():
+                    original_content = await asyncio.to_thread(_read_inside, clone_dir, rel_path)
+                    if original_content is None:
                         skipped_remediations[rel_path] = "File not found inside repository checkout."
                         continue
 
-                    original_content = target_path.read_text(encoding="utf-8", errors="replace")
                     rem = await active_remediator.remediate_file(
                         file_path=rel_path,
                         original_content=original_content,
@@ -361,7 +388,7 @@ def make_code_remediation_outbound(
                         skipped_remediations[rel_path] = f"Rejected generated edit: {validation_error}"
                         continue
 
-                    target_path.write_text(updated, encoding="utf-8")
+                    await asyncio.to_thread(_write_inside, clone_dir, rel_path, updated)
                     edited_files.append(rel_path)
                     change_summaries[rel_path] = rem.change_summary or "Applied compliance remediation."
 
@@ -387,10 +414,11 @@ def make_code_remediation_outbound(
                     f"fix(compliance): remediate FCA/CCA findings ({report.report_id})\n\n"
                     + "\n".join(f"- {path}: {summary}" for path, summary in change_summaries.items())
                 )
-                gh_client.commit_and_push(clone_dir, branch_name, edited_files, commit_msg)
+                await asyncio.to_thread(gh_client.commit_and_push, clone_dir, branch_name, edited_files, commit_msg)
 
                 pr_body_path = tmp_path / "pr_body.md"
-                pr_body_path.write_text(
+                await asyncio.to_thread(
+                    pr_body_path.write_text,
                     render_remediation_pr_body(
                         report,
                         change_summaries=change_summaries,
@@ -401,7 +429,8 @@ def make_code_remediation_outbound(
                 pr_title = (
                     f"fix(compliance): remediate {len(report.findings)} FCA/CCA finding(s) ({report.report_id})"
                 )
-                pr_url = gh_client.create_pr(
+                pr_url = await asyncio.to_thread(
+                    gh_client.create_pr,
                     repo_slug=str(repo_slug),
                     base_branch=base_branch,
                     head_branch=branch_name,
