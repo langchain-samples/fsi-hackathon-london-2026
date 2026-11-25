@@ -45,7 +45,9 @@ Make sure `.env` is configured at the repository root (`cp .env.example .env`), 
 - **macOS / Linux:**
   ```bash
   ./04_fca_compliance_agent/scripts/run.sh
-  # or choose a module:
+  # or scan a specific GitHub repo with the live regulatory MCP server:
+  ./04_fca_compliance_agent/scripts/run.sh --repo-url https://github.com/natchainsix/quicklend-nc --mcp-url http://127.0.0.1:8001/mcp
+  # or choose another module:
   ./04_fca_compliance_agent/scripts/run.sh --module pr_review
   ./04_fca_compliance_agent/scripts/run.sh --module product_spec
   ```
