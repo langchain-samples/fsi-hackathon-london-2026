@@ -1,19 +1,17 @@
 """Composition root exposing ready-to-run compliance pipelines for all 3 context modules.
 
-By default, uses the in-memory mock FCA/CCA & LLM adapters so `langgraph dev` and local
-smoke tests work immediately without external MCP servers or API keys.
-
-Set environment variables to wire live infrastructure:
-  - `USE_LIVE_LLM=true`           -> uses `LangChainComplianceAnalyzer` (LangSmith Gateway `.env`)
-  - `FCA_MCP_URL=http://...`      -> uses `MCPFCAHandbookAdapter` over Streamable HTTP
-  - `CCA_MCP_URL=http://...`      -> uses `MCPConsumerCreditActAdapter` over Streamable HTTP
+Uses `LangChainComplianceAnalyzer` (configured via the repo root `.env`) by default.
+Regulatory tools default to the in-memory mock FCA/CCA adapters until external MCP
+servers are configured via environment variables:
+  - `FCA_MCP_URL=http://...` -> uses `MCPFCAHandbookAdapter` over Streamable HTTP
+  - `CCA_MCP_URL=http://...` -> uses `MCPConsumerCreditActAdapter` over Streamable HTTP
 """
 
 from __future__ import annotations
 
 import os
 
-from .adapters.llm import LangChainComplianceAnalyzer, MockComplianceAnalyzer
+from .adapters.llm import LangChainComplianceAnalyzer
 from .adapters.outbound import (
     build_codebase_review_module,
     build_pr_review_module,
@@ -58,10 +56,7 @@ def build_default_core_subgraph(
         )
 
     if analyzer_port is None:
-        use_live = os.environ.get("USE_LIVE_LLM", "").lower() in ("1", "true", "yes")
-        analyzer_port = (
-            LangChainComplianceAnalyzer() if use_live else MockComplianceAnalyzer()
-        )
+        analyzer_port = LangChainComplianceAnalyzer()
 
     return build_core_analysis_subgraph(
         fca_port=fca_port,

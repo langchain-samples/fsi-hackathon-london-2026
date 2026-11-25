@@ -21,7 +21,7 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for full architecture diagrams, port co
 │   ├── core/                        # Core map-reduce LangGraph subgraph + pipeline builder + HITL gate
 │   ├── adapters/
 │   │   ├── regulatory/              # Mock FCA/CCA knowledge bases + MCP adapters (stdio / HTTP)
-│   │   ├── llm/                     # LangChain Gateway adapter + deterministic Mock analyzer
+│   │   ├── llm/                     # LangChain Gateway adapter (reads MODEL_NAME & gateway keys from .env)
 │   │   ├── inbound/                 # Stub Inbound Adapter nodes for all 3 modules
 │   │   └── outbound/                # Stub Outbound Adapter nodes (incl. agentic subgraph stub for Module 2)
 │   └── agent.py                     # Composition root & default compiled graph
@@ -35,8 +35,30 @@ From the repository root:
 
 ```bash
 uv sync --all-packages
-uv run pytest 04_fca_compliance_agent/tests
+uv run --no-sync --package fca-compliance-agent python -m unittest discover -s 04_fca_compliance_agent/tests -v
 ```
+
+### Running the Compliance Agent (macOS & Windows)
+
+Make sure `.env` is configured at the repository root (`cp .env.example .env`), then run:
+
+- **macOS / Linux:**
+  ```bash
+  ./04_fca_compliance_agent/scripts/run.sh
+  # or choose a module:
+  ./04_fca_compliance_agent/scripts/run.sh --module pr_review
+  ./04_fca_compliance_agent/scripts/run.sh --module product_spec
+  ```
+- **Windows (PowerShell):**
+  ```powershell
+  .\04_fca_compliance_agent\scripts\run.ps1
+  .\04_fca_compliance_agent\scripts\run.ps1 --module pr_review
+  ```
+- **Windows (Command Prompt):**
+  ```cmd
+  04_fca_compliance_agent\scripts\run.cmd
+  04_fca_compliance_agent\scripts\run.cmd --module pr_review
+  ```
 
 To enable real MCP server connectivity (for the FCA Handbook RAG and Consumer Credit Act MCP servers):
 
@@ -53,14 +75,14 @@ from fca_compliance_agent import (
     build_core_analysis_subgraph,
     MockFCAHandbookAdapter,
     MockConsumerCreditActAdapter,
-    MockComplianceAnalyzer,
+    LangChainComplianceAnalyzer,
     build_codebase_review_module,
 )
 
 core = build_core_analysis_subgraph(
     fca_port=MockFCAHandbookAdapter(),
     cca_port=MockConsumerCreditActAdapter(),
-    analyzer_port=MockComplianceAnalyzer(),
+    analyzer_port=LangChainComplianceAnalyzer(),
 )
 
 module = build_codebase_review_module()

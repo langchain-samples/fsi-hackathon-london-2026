@@ -48,10 +48,20 @@ class _UnitFindingsOutput(BaseModel):
     findings: list[_DraftFinding] = Field(default_factory=list)
 
 
+def load_repo_env() -> None:
+    """Load the repository root `.env` (matching workshops 01–03)."""
+    # File lives at: <repo>/04_fca_compliance_agent/src/fca_compliance_agent/adapters/llm/langchain_llm.py
+    repo_root = Path(__file__).resolve().parents[5]
+    env_path = repo_root / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+    else:
+        load_dotenv()
+
+
 def resolve_default_model_name() -> str:
     """Load `MODEL_NAME` from the repo root `.env` (matching workshops 01–03)."""
-    repo_root = Path(__file__).resolve().parents[4]
-    load_dotenv(repo_root / ".env")
+    load_repo_env()
     return os.environ.get("MODEL_NAME", "openai:gpt-6-luna")
 
 
@@ -59,6 +69,7 @@ class LangChainComplianceAnalyzer:
     """Production LLM adapter implementing `ComplianceAnalyzerPort` via LangChain."""
 
     def __init__(self, model_name: str | None = None) -> None:
+        load_repo_env()
         self._model_name = model_name or resolve_default_model_name()
 
     def _model(self):
