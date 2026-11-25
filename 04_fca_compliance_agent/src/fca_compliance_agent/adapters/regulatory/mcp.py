@@ -16,6 +16,12 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+try:
+    # `mcp` imports this in the middle of its first call, which reads files. `langgraph dev` refuses that in async code.
+    import jsonschema  # noqa: F401
+except ImportError:  # the `mcp` extra is not installed
+    pass
+
 from ...domain.models import (
     CitationCheck,
     RegulatoryPassage,

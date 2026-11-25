@@ -21,6 +21,7 @@ from .models import (
     Finding,
     FindingsReport,
     HumanReviewDecision,
+    OutputType,
     TriagedUnit,
 )
 
@@ -76,6 +77,7 @@ class PipelineState(TypedDict, total=False):
     require_human_approval: bool
     analysis_input: AnalysisInput
     adapter_context: dict[str, Any]
+    output_type: OutputType  # decided by the inbound adapter; the core never reads it
     findings_report: FindingsReport
     human_review: HumanReviewDecision
     deliverable_result: DeliverableResult

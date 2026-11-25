@@ -4,7 +4,9 @@ Hexagonal, LangGraph-based compliance analysis agent designed to plug interchang
 
 1. **PR Code Review** (`gh` CLI PR link → inline PR comments)
 2. **Existing Codebase Review** (GitHub repo URL → agentic remediation PR via Git + `gh` CLI)
-3. **Product Spec Review** (Incoming PDF → PDF Findings Report)
+3. **Product Spec Review** (PDF, Markdown or text specification → PDF findings report)
+
+One graph, `fca_compliance`, puts chat in front of all three. See [Chat](#chat).
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for full architecture diagrams, port contracts, MCP integration guide, and module blueprints.
 
@@ -23,6 +25,9 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for full architecture diagrams, port co
 │   │   ├── regulatory/              # MCP client adapters (stdio / Streamable HTTP) for FCA Handbook RAG & CCA
 │   │   ├── llm/                     # LangChain Gateway adapter (reads MODEL_NAME & gateway keys from .env)
 │   │   ├── github_pr.py             # Real PR Review inbound/outbound adapter (`gh` CLI)
+│   │   ├── chat.py                  # The combined graph: chat adapter in front of every review
+│   │   ├── output_type.py           # Decides the required output from the input
+│   │   ├── product_spec.py          # Product spec inbound/outbound adapter
 │   │   ├── github_codebase.py       # Real Codebase Review inbound scanner + remediation wiring
 │   │   └── outbound/                # Real GitHub CLI API adapter & LLM code remediation outbound agent
 │   ├── mcp_server/                  # Real Consumer Credit Act 1974 MCP server (`cca.md`) & bootstrap helpers
@@ -85,6 +90,32 @@ To install the MCP extra manually (e.g. if running `fca-regulatory-mcp` directly
 ```bash
 uv sync --all-packages --extra mcp
 ```
+
+## Chat
+
+Start the FCA Handbook server (below), then Studio, which shows one graph with its Chat tab enabled:
+
+```bash
+cd 04_fca_compliance_agent && uv run --no-sync langgraph dev
+```
+
+The chat adapter is plain code. It decides the `output_type` from what you send and passes it along, and the outbound adapter
+delivers it. The core never reads it.
+
+| You send | `output_type` | Approval |
+|---|---|---|
+| `https://github.com/owner/repo/pull/12` | `pr_comment` | Asked for first |
+| `https://github.com/owner/repo`, or `.../tree/branch` | `remediation_pr` | Asked for first |
+| A PDF attachment, the name of a file in `specs/`, or `spec:` and the text | `pdf_report` | Not needed |
+| Any of these, with "report only" or `output: report` | `report` | Not needed |
+
+You always get the report as the reply. To approve, answer `approve`; anything else writes nothing. Files in `specs/` are
+git-ignored.
+
+`raw_input` works on the same graph, with the keys each workflow takes and an optional `output_type`. There, as before, GitHub
+writes do not wait for approval unless `require_human_approval` is true.
+
+It reads GitHub with your own `gh` login, so add access control before you deploy it.
 
 ## Regulatory MCP Servers
 

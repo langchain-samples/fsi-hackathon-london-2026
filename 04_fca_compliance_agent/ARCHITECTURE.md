@@ -334,7 +334,34 @@ Any callable (sync/async function) **or compiled LangGraph `StateGraph`** matchi
 
 ---
 
-## 6. Blueprints for Future I/O Modules
+## 6. Combined Graph & Output Type
+
+`compliance_agent` (`adapters/chat.py`) is the one graph that Studio shows. The three pipelines run inside it, unchanged.
+
+```mermaid
+flowchart TB
+    IN(["Chat message or raw_input"])
+    ADAPTER["<b>chat_adapter</b>, plain code<br/>decides the review and the output_type"]
+    PR["<b>pr_review</b>"]
+    REPO["<b>codebase_review</b>"]
+    SPEC["<b>product_spec</b>"]
+    ASK["<b>ask</b><br/>what to send"]
+    IN --> ADAPTER
+    ADAPTER -->|pr_comment| PR
+    ADAPTER -->|remediation_pr| REPO
+    ADAPTER -->|pdf_report| SPEC
+    ADAPTER -->|not clear| ASK
+```
+
+Any of them can also be `report`. `output_type` is a field of `PipelineState`, next to `adapter_context`. An inbound adapter
+sets it with `decide_output_type` (`adapters/output_type.py`), the human review gate shows it, the outbound adapter delivers
+it, and `DeliverableResult.output_type` records it. The core subgraph does not have the field.
+
+From chat, an output that writes to GitHub always waits at the human review gate. Each turn clears the previous turn's input.
+
+---
+
+## 7. Blueprints for Future I/O Modules
 
 | Module | Inbound Adapter (Node/Subgraph) | `adapter_context` Passed Through | Outbound Adapter (Node/Subgraph) |
 |---|---|---|---|
