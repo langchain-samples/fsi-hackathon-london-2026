@@ -337,7 +337,7 @@ class MCPFCAHandbookAdapter(_BaseMCPClientAdapter):
         super().__init__(server_config=server_config, caller=caller)
         self._mapping = tool_mapping or MCPToolMapping(
             search_tool="search_fca_handbook",
-            fetch_tool="get_fca_rule",
+            fetch_tool=None,
             query_arg="query",
             top_k_arg="top_k",
             filter_arg="sourcebooks",
@@ -378,6 +378,15 @@ class MCPFCAHandbookAdapter(_BaseMCPClientAdapter):
             _raise_if_error(raw)
             passages = parse_mcp_passages(raw, source="fca_handbook", default_reference=reference)
             return passages[0] if passages else None
+
+        if self._mapping.section_tool:
+            section = await self.get_section(reference)
+            target = reference.strip().upper()
+            exact = next(
+                (p for p in section.passages if p.reference.strip().upper() == target),
+                None,
+            )
+            return exact or (section.passages[0] if section.passages else None)
 
         # Graceful fallback if the MCP server only exposes semantic search
         results = await self.search_rules(reference, top_k=1)

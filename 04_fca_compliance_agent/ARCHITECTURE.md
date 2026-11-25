@@ -26,7 +26,7 @@ adapters/  ──▶  core/  ──▶  ports/  ──▶  domain/
 - `domain/` depends **only** on Python stdlib + `pydantic` (+ `typing_extensions` / `langgraph` reducer annotations in `state.py`). Zero LLM, MCP, GitHub, or PDF imports.
 - `ports/` depends **only** on `domain/`. Defines `Protocol` interfaces for external regulatory tools, LLM reasoning, and I/O adapter nodes.
 - `core/` depends **only** on `domain/` and `ports/` (+ `langgraph`). Never imports concrete MCP clients, LangChain model providers, `gh` CLI, Git, or PDF libraries.
-- `adapters/` implements `ports/` (MCP servers, mocks, LangChain LLM Gateway, and the swappable I/O modules).
+- `adapters/` implements `ports/` using real integrations only (MCP clients, LangChain LLM Gateway, GitHub CLI + Code Remediator). Test-only mocks and stubs live exclusively under `tests/fakes.py`.
 - `agent.py` (Composition Root) wires concrete adapters into the core pipeline.
 
 ---
@@ -121,7 +121,7 @@ sequenceDiagram
 
 Which parts reason, which parts are plain code, and which parts are tools. **The review of each change against the FCA Handbook and the Consumer Credit Act is a placeholder for an agent that is being built separately.** Until it lands, that step is fixed: code runs the searches and one LLM call judges the results. Triage and the executive summary are single LLM calls. Everything else is code.
 
-`pr_review_agent`, `codebase_review_agent` and `product_spec_agent` are whole pipelines, not agents themselves.
+`pr_review_agent` and `codebase_review_agent` are whole pipelines, not agents themselves.
 
 ```mermaid
 flowchart TB
@@ -131,7 +131,7 @@ flowchart TB
     end
     LEGEND ~~~ START
 
-    START(["Caller"]) --> IN["inbound_adapter<br/>FUNCTION<br/>PR real, repo and PDF stubs"]
+    START(["Caller"]) --> IN["inbound_adapter<br/>FUNCTION<br/>Real PR & repo adapters"]
 
     subgraph CORE["core_analysis"]
         TRI("triage_units<br/>LLM STEP 1<br/>relevance + first queries")
@@ -159,8 +159,8 @@ flowchart TB
 
     subgraph OUT["outbound_adapter"]
         OUTPR["Module 1: report + PR comment<br/>FUNCTION"]
-        OUTREPO["Module 2: remediation<br/>FUNCTION (stub today)<br/>AGENT (planned)"]
-        OUTPDF["Module 3: PDF report<br/>FUNCTION (stub)"]
+        OUTREPO["Module 2: remediation<br/>LLM STEP + Git/GH PR"]
+        OUTPDF["Module 3: PDF report<br/>(planned)"]
     end
 
     DONE(["DeliverableResult"])
@@ -192,7 +192,7 @@ flowchart TB
 | **Agent** | A model chooses its own tools and next step, in a loop | None built yet. Placeholder: the review in `analyze_unit`. Planned: Module 2 remediation |
 | **LLM step** | One model call with a fixed prompt and no tools | `triage_units`, the cross-check in `analyze_unit` (until the agent replaces it), the summary in `synthesize_report` |
 | **Function** | Plain code, no model | Inbound and outbound adapters, routing, retrieval, grounding citations, ranking, verdict, report |
-| **Tool** | Read-only, called over MCP (mock adapters unless `FCA_MCP_URL` and `CCA_MCP_URL` are set) | `search_fca_handbook`, `get_fca_section`, `check_fca_citation`, `query_consumer_credit_act`, `get_consumer_credit_act_document` |
+| **Tool** | Read-only, called over MCP (`handbook_rag` via `FCA_MCP_URL` / default `http://127.0.0.1:8765/mcp`; `fca-regulatory-mcp` via `CCA_MCP_URL` / stdio) | `search_fca_handbook`, `get_fca_section`, `check_fca_citation`, `query_consumer_credit_act`, `get_consumer_credit_act_document` |
 | **Human** | A person decides. Off by default (`require_human_approval=False`), so reports are auto-approved | `human_review_gate` |
 
 **For the agent that fills the placeholder:** `FCAHandbookResearchPort` (`ports/regulatory.py`), which `MCPFCAHandbookAdapter` implements, offers `search` (breadth, snippets), `get_section` (depth, a whole section in order) and `check_citation` (is the quote word for word, and is the provision binding). Failures raise `MCPToolError`, so an error is never mistaken for a rule. Code should still check every quote after the agent answers.

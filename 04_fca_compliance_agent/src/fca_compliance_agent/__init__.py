@@ -1,11 +1,15 @@
 """Public API for the Hexagonal FCA Handbook & Consumer Credit Act Compliance Agent."""
 
+from .adapters.github_codebase import build_github_codebase_review_module
+from .adapters.github_pr import build_github_pr_review_module
 from .adapters.llm import LangChainComplianceAnalyzer
 from .adapters.outbound import (
-    build_codebase_remediation_outbound_subgraph,
-    build_codebase_review_module,
-    build_pr_review_module,
-    build_product_spec_module,
+    CodeRemediator,
+    FileRemediationResult,
+    GitHubCLIAdapter,
+    GitHubClient,
+    LangChainCodeRemediator,
+    make_code_remediation_outbound,
 )
 from .adapters.regulatory import (
     MCPCaller,
@@ -14,8 +18,6 @@ from .adapters.regulatory import (
     MCPServerConfig,
     MCPToolError,
     MCPToolMapping,
-    MockConsumerCreditActAdapter,
-    MockFCAHandbookAdapter,
 )
 from .core import (
     build_compliance_pipeline,
@@ -55,6 +57,7 @@ __all__ = [
     "AnalysisInput",
     "AnalysisUnit",
     "CodeLocation",
+    "CodeRemediator",
     "ComplianceAnalyzerPort",
     "ConsumerCreditActPort",
     "ContextModule",
@@ -63,11 +66,15 @@ __all__ = [
     "DocumentLocation",
     "EvidenceLocation",
     "FCAHandbookPort",
+    "FileRemediationResult",
     "Finding",
     "FindingsReport",
     "GenericLocation",
+    "GitHubCLIAdapter",
+    "GitHubClient",
     "HumanReviewDecision",
     "InboundAdapterNode",
+    "LangChainCodeRemediator",
     "LangChainComplianceAnalyzer",
     "MCPCaller",
     "MCPConsumerCreditActAdapter",
@@ -75,8 +82,6 @@ __all__ = [
     "MCPServerConfig",
     "MCPToolError",
     "MCPToolMapping",
-    "MockConsumerCreditActAdapter",
-    "MockFCAHandbookAdapter",
     "OutboundAdapterNode",
     "PipelineConfig",
     "PipelineInput",
@@ -85,11 +90,10 @@ __all__ = [
     "RegulatoryCitation",
     "RegulatoryPassage",
     "TriagedUnit",
-    "build_codebase_remediation_outbound_subgraph",
-    "build_codebase_review_module",
     "build_compliance_pipeline",
     "build_core_analysis_subgraph",
+    "build_github_codebase_review_module",
+    "build_github_pr_review_module",
     "build_pipeline_for_module",
-    "build_pr_review_module",
-    "build_product_spec_module",
+    "make_code_remediation_outbound",
 ]

@@ -1,6 +1,6 @@
 # Run the FCA & Consumer Credit Act compliance agent on Windows (PowerShell)
-# Automatically ensures `uv` is installed, syncs dependencies (including the `mcp` extra),
-# and launches the runner (which auto-bootstraps the regulatory MCP server in the background).
+# Automatically ensures `uv` is installed, syncs dependencies (including MCP / Handbook RAG extras),
+# and launches the runner (which connects to or auto-bootstraps both regulatory MCP servers).
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -29,7 +29,7 @@ function Ensure-Uv {
 }
 
 $IsHelp = ($args -contains "-h") -or ($args -contains "--help")
-$NoMcp = $args -contains "--no-mcp"
+$HasExternalFca = [bool]$env:FCA_MCP_URL -or ($args -contains "--fca-mcp-url")
 
 Ensure-Uv
 
@@ -40,8 +40,12 @@ if ((-not $IsHelp) -and (-not (Test-Path $EnvFile))) {
 Push-Location $RepoRoot
 try {
     $NeedSync = $true
+    $CheckExpr = if ($HasExternalFca) {
+        "import fca_compliance_agent, mcp"
+    } else {
+        "import fca_compliance_agent, mcp, qdrant_client, fastembed"
+    }
     if (($env:FORCE_UV_SYNC -ne "1") -and (Test-Path $VenvPython)) {
-        $CheckExpr = if ($NoMcp) { "import fca_compliance_agent" } else { "import fca_compliance_agent, mcp" }
         & $VenvPython -c $CheckExpr 2>$null
         if ($LASTEXITCODE -eq 0) {
             $NeedSync = $false
@@ -49,11 +53,12 @@ try {
     }
 
     if ($NeedSync) {
-        Write-Host "Syncing fca-compliance-agent dependencies (including mcp extra) with uv..."
+        $Extras = if ($HasExternalFca) { @("--extra", "mcp") } else { @("--extra", "mcp", "--extra", "handbook-rag") }
+        Write-Host "Syncing fca-compliance-agent dependencies ($($Extras -join ' ')) with uv..."
         if (Test-Path $LockFile) {
-            uv sync --frozen --inexact --package fca-compliance-agent --extra mcp
+            uv sync --frozen --inexact --package fca-compliance-agent @Extras
         } else {
-            uv sync --inexact --package fca-compliance-agent --extra mcp
+            uv sync --inexact --package fca-compliance-agent @Extras
         }
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
