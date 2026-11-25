@@ -1,12 +1,13 @@
-"""Composition root exposing ready-to-run compliance pipelines for all 3 context modules.
+"""Composition root exposing ready-to-run compliance pipelines backed by real integrations.
 
-Uses `LangChainComplianceAnalyzer` (configured via the repo root `.env`) by default.
-Regulatory tools default to real implementations wherever available:
-  - `CCA_MCP_URL=http://...` -> uses `MCPConsumerCreditActAdapter` over Streamable HTTP
-  - otherwise, when the `mcp` extra is installed -> spawns the local `fca-regulatory-mcp`
-    server over stdio (backed by the real Consumer Credit Act text in `cca.md`)
-  - `FCA_MCP_URL=http://...` -> uses `MCPFCAHandbookAdapter` over Streamable HTTP
-  - otherwise -> uses `MockFCAHandbookAdapter` (until the live FCA Handbook RAG corpus lands)
+Always wires real implementations:
+  - LLM: `LangChainComplianceAnalyzer` (configured via repo root `.env`)
+  - FCA Handbook RAG: `MCPFCAHandbookAdapter` over Streamable HTTP
+    (`FCA_MCP_URL`, defaulting to the local `handbook_rag` server at `http://127.0.0.1:8765/mcp`)
+  - Consumer Credit Act 1974: `MCPConsumerCreditActAdapter`
+    (`CCA_MCP_URL` over Streamable HTTP, or local `fca-regulatory-mcp` over stdio backed by `cca.md`)
+  - GitHub I/O: real `GitHubCLIAdapter` (`git` + `gh` CLI) for both `pr_review_agent` and
+    `codebase_review_agent`
 """
 
 from __future__ import annotations
@@ -18,22 +19,17 @@ from .adapters.github_codebase import build_github_codebase_review_module
 from .adapters.github_pr import build_github_pr_review_module
 from .adapters.llm import LangChainComplianceAnalyzer
 from .adapters.llm.langchain_llm import load_repo_env
-from .adapters.outbound import (
-    build_product_spec_module,
-)
 from .adapters.regulatory import (
     MCPConsumerCreditActAdapter,
     MCPFCAHandbookAdapter,
     MCPServerConfig,
-    MockConsumerCreditActAdapter,
-    MockFCAHandbookAdapter,
 )
 from .core import build_core_analysis_subgraph, build_pipeline_for_module
-from .mcp_server.bootstrap import is_mcp_installed
+from .mcp_server.bootstrap import DEFAULT_FCA_MCP_URL
 from .ports import ComplianceAnalyzerPort, ConsumerCreditActPort, FCAHandbookPort
 
 
-def _default_stdio_mcp_config() -> MCPServerConfig:
+def _default_stdio_cca_mcp_config() -> MCPServerConfig:
     return MCPServerConfig(
         transport="stdio",
         command=sys.executable,
@@ -47,17 +43,13 @@ def build_default_core_subgraph(
     cca_port: ConsumerCreditActPort | None = None,
     analyzer_port: ComplianceAnalyzerPort | None = None,
 ):
-    """Wire the Core Analysis Subgraph from explicit ports or environment config."""
+    """Wire the Core Analysis Subgraph from explicit ports or real environment config."""
     load_repo_env()
 
     if fca_port is None:
-        fca_url = os.environ.get("FCA_MCP_URL")
-        fca_port = (
-            MCPFCAHandbookAdapter(
-                server_config=MCPServerConfig(transport="streamable_http", url=fca_url)
-            )
-            if fca_url
-            else MockFCAHandbookAdapter()
+        fca_url = os.environ.get("FCA_MCP_URL") or DEFAULT_FCA_MCP_URL
+        fca_port = MCPFCAHandbookAdapter(
+            server_config=MCPServerConfig(transport="streamable_http", url=fca_url)
         )
 
     if cca_port is None:
@@ -66,10 +58,10 @@ def build_default_core_subgraph(
             cca_port = MCPConsumerCreditActAdapter(
                 server_config=MCPServerConfig(transport="streamable_http", url=cca_url)
             )
-        elif is_mcp_installed():
-            cca_port = MCPConsumerCreditActAdapter(server_config=_default_stdio_mcp_config())
         else:
-            cca_port = MockConsumerCreditActAdapter()
+            cca_port = MCPConsumerCreditActAdapter(
+                server_config=_default_stdio_cca_mcp_config()
+            )
 
     if analyzer_port is None:
         analyzer_port = LangChainComplianceAnalyzer()
@@ -89,9 +81,5 @@ pr_review_agent = build_pipeline_for_module(
 )
 codebase_review_agent = build_pipeline_for_module(
     build_github_codebase_review_module(),
-    core_subgraph=_default_core,
-)
-product_spec_agent = build_pipeline_for_module(
-    build_product_spec_module(),
     core_subgraph=_default_core,
 )

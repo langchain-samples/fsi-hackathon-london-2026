@@ -13,11 +13,15 @@ from pathlib import Path
 from unittest import mock
 
 from fca_compliance_agent.mcp_server.bootstrap import (
+    DEFAULT_FCA_MCP_URL,
     DEFAULT_MCP_HOST,
     is_mcp_installed,
+    managed_cca_mcp_server,
+    managed_fca_mcp_server,
     managed_mcp_server,
     pick_free_port,
-    resolve_mcp_mode,
+    resolve_cca_mcp_mode,
+    resolve_fca_mcp_mode,
     wait_for_port,
 )
 
@@ -46,37 +50,61 @@ def _can_connect_loopback() -> bool:
 
 
 class ResolveMcpModeTests(unittest.TestCase):
-    def test_defaults_to_auto_bootstrap_when_nothing_configured(self) -> None:
-        url, should_bootstrap = resolve_mcp_mode(mcp_url=None, no_mcp=False, environ={})
+    def test_cca_defaults_to_auto_bootstrap_when_nothing_configured(self) -> None:
+        url, should_bootstrap = resolve_cca_mcp_mode(cca_mcp_url=None, environ={})
         self.assertIsNone(url)
         self.assertTrue(should_bootstrap)
 
-    def test_no_mcp_disables_bootstrap_even_with_env_or_url(self) -> None:
-        url, should_bootstrap = resolve_mcp_mode(
-            mcp_url="http://127.0.0.1:8001/mcp",
-            no_mcp=True,
-            environ={"FCA_MCP_URL": "http://127.0.0.1:8001/mcp"},
-        )
-        self.assertIsNone(url)
-        self.assertFalse(should_bootstrap)
-
-    def test_explicit_mcp_url_disables_bootstrap(self) -> None:
-        url, should_bootstrap = resolve_mcp_mode(
-            mcp_url="http://127.0.0.1:9999/mcp",
-            no_mcp=False,
+    def test_cca_explicit_url_disables_bootstrap(self) -> None:
+        url, should_bootstrap = resolve_cca_mcp_mode(
+            cca_mcp_url="http://127.0.0.1:9999/mcp",
             environ={},
         )
         self.assertEqual(url, "http://127.0.0.1:9999/mcp")
         self.assertFalse(should_bootstrap)
 
-    def test_existing_env_url_disables_bootstrap(self) -> None:
-        url, should_bootstrap = resolve_mcp_mode(
-            mcp_url=None,
-            no_mcp=False,
+    def test_cca_existing_env_url_disables_bootstrap(self) -> None:
+        url, should_bootstrap = resolve_cca_mcp_mode(
+            cca_mcp_url=None,
             environ={"CCA_MCP_URL": "http://127.0.0.1:8001/mcp"},
         )
         self.assertEqual(url, "http://127.0.0.1:8001/mcp")
         self.assertFalse(should_bootstrap)
+
+    def test_fca_defaults_to_auto_bootstrap_when_not_configured_or_listening(self) -> None:
+        url, should_bootstrap = resolve_fca_mcp_mode(
+            fca_mcp_url=None,
+            environ={},
+            check_default_port=lambda _h, _p: False,
+        )
+        self.assertIsNone(url)
+        self.assertTrue(should_bootstrap)
+
+    def test_fca_reuses_already_running_default_handbook_rag_server(self) -> None:
+        url, should_bootstrap = resolve_fca_mcp_mode(
+            fca_mcp_url=None,
+            environ={},
+            check_default_port=lambda _h, _p: True,
+        )
+        self.assertEqual(url, DEFAULT_FCA_MCP_URL)
+        self.assertFalse(should_bootstrap)
+
+    def test_fca_explicit_url_or_env_disables_bootstrap(self) -> None:
+        url, should_bootstrap = resolve_fca_mcp_mode(
+            fca_mcp_url="http://127.0.0.1:9876/mcp",
+            environ={},
+            check_default_port=lambda _h, _p: False,
+        )
+        self.assertEqual(url, "http://127.0.0.1:9876/mcp")
+        self.assertFalse(should_bootstrap)
+
+        env_url, env_bootstrap = resolve_fca_mcp_mode(
+            fca_mcp_url=None,
+            environ={"FCA_MCP_URL": "http://127.0.0.1:8765/mcp"},
+            check_default_port=lambda _h, _p: False,
+        )
+        self.assertEqual(env_url, "http://127.0.0.1:8765/mcp")
+        self.assertFalse(env_bootstrap)
 
 
 class PickFreePortTests(unittest.TestCase):
@@ -126,10 +154,16 @@ class WaitForPortAndLifecycleTests(unittest.TestCase):
             finally:
                 proc.wait(timeout=5)
 
-    def test_managed_mcp_server_raises_clear_error_when_mcp_not_installed(self) -> None:
+    def test_managed_cca_mcp_server_raises_clear_error_when_mcp_not_installed(self) -> None:
         with mock.patch("fca_compliance_agent.mcp_server.bootstrap.is_mcp_installed", return_value=False):
             with self.assertRaisesRegex(RuntimeError, r"extra mcp"):
-                with managed_mcp_server():
+                with managed_cca_mcp_server():
+                    pass
+
+    def test_managed_fca_mcp_server_raises_clear_error_when_handbook_rag_not_installed(self) -> None:
+        with mock.patch("fca_compliance_agent.mcp_server.bootstrap.is_handbook_rag_installed", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, r"handbook-rag"):
+                with managed_fca_mcp_server():
                     pass
 
     def test_managed_mcp_server_cleans_up_subprocess_on_exit(self) -> None:
@@ -156,24 +190,17 @@ class WaitForPortAndLifecycleTests(unittest.TestCase):
             self.assertIsNotNone(captured_procs[0].poll())
 
     @unittest.skipUnless(is_mcp_installed() and _can_connect_loopback(), "needs mcp extra and loopback TCP connect")
-    def test_managed_mcp_server_serves_live_http_requests_and_shuts_down(self) -> None:
+    def test_managed_cca_mcp_server_serves_live_http_requests_and_shuts_down(self) -> None:
         from fca_compliance_agent.adapters.regulatory.mcp import (
             MCPConsumerCreditActAdapter,
-            MCPFCAHandbookAdapter,
             MCPServerConfig,
         )
 
-        with managed_mcp_server(port=None, startup_timeout=15.0) as url:
+        with managed_cca_mcp_server(port=None, startup_timeout=15.0) as url:
             config = MCPServerConfig(transport="streamable_http", url=url)
 
             async def query() -> None:
-                fca = MCPFCAHandbookAdapter(server_config=config)
                 cca = MCPConsumerCreditActAdapter(server_config=config)
-
-                fca_hits = await fca.search_rules("representative APR promotion", top_k=3)
-                self.assertTrue(fca_hits)
-                self.assertIn("CONC 3.5.7R", [p.reference for p in fca_hits])
-
                 cca_hits = await cca.query_provisions("withdraw within 14 days", top_k=3)
                 self.assertTrue(cca_hits)
                 self.assertIn("CCA 1974 s.66A", [p.reference for p in cca_hits])
@@ -189,13 +216,15 @@ class RunnerCliTests(unittest.TestCase):
         defaults = parser.parse_args([])
         self.assertEqual(defaults.module, "codebase_review")
         self.assertEqual(defaults.repo_url, "https://github.com/natchainsix/quicklend-nc")
-        self.assertIsNone(defaults.mcp_url)
-        self.assertIsNone(defaults.mcp_port)
-        self.assertFalse(defaults.no_mcp)
+        self.assertIsNone(defaults.fca_mcp_url)
+        self.assertIsNone(defaults.fca_mcp_port)
+        self.assertIsNone(defaults.cca_mcp_url)
+        self.assertIsNone(defaults.cca_mcp_port)
         self.assertFalse(defaults.no_github)
         self.assertFalse(defaults.draft_pr)
         self.assertFalse(defaults.require_approval)
-        self.assertFalse(defaults.synthetic_diff)
+        self.assertFalse(hasattr(defaults, "no_mcp"))
+        self.assertFalse(hasattr(defaults, "synthetic_diff"))
 
         default_payload = runner._build_payload(defaults)
         self.assertTrue(default_payload["raw_input"]["create_pr"])
@@ -207,15 +236,16 @@ class RunnerCliTests(unittest.TestCase):
                 "pr_review",
                 "--pr-url",
                 "https://github.com/acme/credit/pull/7",
-                "--mcp-port",
+                "--fca-mcp-port",
+                "8770",
+                "--cca-mcp-port",
                 "8010",
-                "--no-mcp",
                 "--require-approval",
             ]
         )
         self.assertEqual(parsed.module, "pr_review")
-        self.assertEqual(parsed.mcp_port, 8010)
-        self.assertTrue(parsed.no_mcp)
+        self.assertEqual(parsed.fca_mcp_port, 8770)
+        self.assertEqual(parsed.cca_mcp_port, 8010)
         self.assertTrue(parsed.require_approval)
 
         pr_payload = runner._build_payload(parsed)
@@ -224,12 +254,6 @@ class RunnerCliTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             runner._build_payload(parser.parse_args(["--module", "pr_review"]))
-
-        synthetic_payload = runner._build_payload(
-            parser.parse_args(["--module", "pr_review", "--synthetic-diff"])
-        )
-        self.assertFalse(synthetic_payload["raw_input"]["post_to_github"])
-        self.assertIn("diff", synthetic_payload["raw_input"])
 
 
 if __name__ == "__main__":

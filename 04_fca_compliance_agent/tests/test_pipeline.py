@@ -28,6 +28,13 @@ from typing import Any
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+from fakes import (
+    LocalMockGitHubClient,
+    MockConsumerCreditActAdapter,
+    MockFCAHandbookAdapter,
+    build_product_spec_stub_module,
+)
+
 from fca_compliance_agent import (
     AnalysisInput,
     AnalysisUnit,
@@ -36,23 +43,20 @@ from fca_compliance_agent import (
     MCPFCAHandbookAdapter,
     MCPToolError,
     MCPToolMapping,
-    MockConsumerCreditActAdapter,
-    MockFCAHandbookAdapter,
     RegulatoryCitation,
     RegulatoryPassage,
     TriagedUnit,
     build_core_analysis_subgraph,
+    build_github_codebase_review_module,
+    build_github_pr_review_module,
     build_pipeline_for_module,
-    build_product_spec_module,
 )
 from fca_compliance_agent.adapters.github_codebase import (
     FileRemediationResult,
-    build_github_codebase_review_module,
     render_codebase_markdown,
     render_remediation_pr_body,
 )
-from fca_compliance_agent.adapters.github_pr import build_github_pr_review_module, render_markdown
-from fca_compliance_agent.adapters.outbound.github_client import LocalMockGitHubClient
+from fca_compliance_agent.adapters.github_pr import render_markdown
 
 _SAMPLE_PR_DIFF = """diff --git a/src/underwriting/approve.py b/src/underwriting/approve.py
 index 1111111..2222222 100644
@@ -327,9 +331,9 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("PRs:      1", summary)
 
-    async def test_product_spec_module_end_to_end(self) -> None:
+    async def test_custom_document_module_end_to_end(self) -> None:
         pipeline = build_pipeline_for_module(
-            build_product_spec_module(),
+            build_product_spec_stub_module(),
             core_subgraph=_build_test_core(),
         )
 
@@ -624,10 +628,20 @@ class TestHandbookRAGServer(unittest.IsolatedAsyncioTestCase):
         for failure in ("There is no Handbook index called 'x'.", "Error executing tool get_fca_section"):
             with self.subTest(failure), self.assertRaises(MCPToolError):
                 await MCPFCAHandbookAdapter(caller=_rag({"get_fca_section": failure})).get_rule("CONC 5.2A.4R")
-        with self.assertRaises(MCPToolError):  # the rule tool exists, and failed
-            await MCPFCAHandbookAdapter(
-                caller=_rag({"get_fca_rule": "boom", "get_fca_section": self._section("CONC 5.2A.4R")})
-            ).get_rule("CONC 5.2A.4R")
+
+    async def test_get_rule_uses_a_rule_tool_that_the_mapping_names(self) -> None:
+        async def ask(tools: dict[str, Any]) -> RegulatoryPassage | None:
+            mapping = MCPToolMapping(
+                search_tool="search_fca_handbook", fetch_tool="get_fca_rule", section_tool="get_fca_section"
+            )
+            return await MCPFCAHandbookAdapter(caller=_rag(tools), tool_mapping=mapping).get_rule("CONC 5.2A.4R")
+
+        section = self._section("CONC 5.2A.3R", "CONC 5.2A.4R")
+        found = {"results": [{"reference": "CONC 5.2A.4R", "text": "From the rule tool."}]}
+        self.assertEqual((await ask({"get_fca_rule": found})).text, "From the rule tool.")
+        self.assertEqual((await ask({"get_fca_section": section})).reference, "CONC 5.2A.4R")  # the server lacks the tool
+        with self.assertRaises(MCPToolError):  # the tool exists, and failed
+            await ask({"get_fca_rule": "boom", "get_fca_section": section})
 
     async def test_a_custom_mapping_only_calls_the_tools_it_names(self) -> None:
         calls: list[str] = []
@@ -789,6 +803,39 @@ class TestHexagonalArchitectureBoundaries(unittest.TestCase):
                             violations.append(f"{py_file.name}: from {resolved} import ...")
 
         self.assertEqual(violations, [], f"Hexagonal boundary violations: {violations}")
+
+    def test_no_stubs_or_mocks_in_production_code(self) -> None:
+        """Guardrail ensuring stubs and mocks live in tests/ only and never in src/ or scripts/."""
+        import fca_compliance_agent
+
+        project_root = Path(__file__).resolve().parents[1]
+        src_root = project_root / "src" / "fca_compliance_agent"
+        scripts_root = project_root / "scripts"
+
+        bad_files = [
+            str(p.relative_to(project_root))
+            for p in src_root.rglob("*.py")
+            if "stub" in p.stem.lower() or "mock" in p.stem.lower()
+        ]
+        self.assertEqual(bad_files, [], f"Stub/mock modules found in src/: {bad_files}")
+
+        bad_defs: list[str] = []
+        for directory in (src_root, scripts_root):
+            for py_file in directory.rglob("*.py"):
+                tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                        lower = node.name.lower()
+                        if "stub" in lower or "mock" in lower:
+                            bad_defs.append(f"{py_file.relative_to(project_root)}:{node.name}")
+        self.assertEqual(bad_defs, [], f"Stub/mock definitions found in production code: {bad_defs}")
+
+        bad_exports = [
+            name
+            for name in fca_compliance_agent.__all__
+            if "mock" in name.lower() or "stub" in name.lower() or "product_spec" in name.lower()
+        ]
+        self.assertEqual(bad_exports, [], f"Stub/mock symbols exported from package: {bad_exports}")
 
 
 if __name__ == "__main__":

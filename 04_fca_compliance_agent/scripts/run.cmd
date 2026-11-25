@@ -25,11 +25,12 @@ if errorlevel 1 (
 )
 
 set "IS_HELP=0"
-set "NO_MCP=0"
+set "HAS_EXTERNAL_FCA=0"
+if not "%FCA_MCP_URL%"=="" set "HAS_EXTERNAL_FCA=1"
 for %%A in (%*) do (
     if "%%~A"=="-h" set "IS_HELP=1"
     if "%%~A"=="--help" set "IS_HELP=1"
-    if "%%~A"=="--no-mcp" set "NO_MCP=1"
+    if "%%~A"=="--fca-mcp-url" set "HAS_EXTERNAL_FCA=1"
 )
 
 if "%IS_HELP%"=="0" if not exist "%REPO_ROOT%\.env" (
@@ -40,19 +41,28 @@ pushd "%REPO_ROOT%"
 
 set "NEED_SYNC=1"
 if not "%FORCE_UV_SYNC%"=="1" if exist "%VENV_PYTHON%" (
-    if "%NO_MCP%"=="1" (
-        "%VENV_PYTHON%" -c "import fca_compliance_agent" >nul 2>&1 && set "NEED_SYNC=0"
-    ) else (
+    if "%HAS_EXTERNAL_FCA%"=="1" (
         "%VENV_PYTHON%" -c "import fca_compliance_agent, mcp" >nul 2>&1 && set "NEED_SYNC=0"
+    ) else (
+        "%VENV_PYTHON%" -c "import fca_compliance_agent, mcp, qdrant_client, fastembed" >nul 2>&1 && set "NEED_SYNC=0"
     )
 )
 
 if "%NEED_SYNC%"=="1" (
-    echo Syncing fca-compliance-agent dependencies (including mcp extra^) with uv... 1>&2
-    if exist "%REPO_ROOT%\uv.lock" (
-        uv sync --frozen --inexact --package fca-compliance-agent --extra mcp
+    if "%HAS_EXTERNAL_FCA%"=="1" (
+        echo Syncing fca-compliance-agent dependencies (--extra mcp^) with uv... 1>&2
+        if exist "%REPO_ROOT%\uv.lock" (
+            uv sync --frozen --inexact --package fca-compliance-agent --extra mcp
+        ) else (
+            uv sync --inexact --package fca-compliance-agent --extra mcp
+        )
     ) else (
-        uv sync --inexact --package fca-compliance-agent --extra mcp
+        echo Syncing fca-compliance-agent dependencies (--extra mcp --extra handbook-rag^) with uv... 1>&2
+        if exist "%REPO_ROOT%\uv.lock" (
+            uv sync --frozen --inexact --package fca-compliance-agent --extra mcp --extra handbook-rag
+        ) else (
+            uv sync --inexact --package fca-compliance-agent --extra mcp --extra handbook-rag
+        )
     )
     if errorlevel 1 (
         set "EXIT_CODE=%ERRORLEVEL%"

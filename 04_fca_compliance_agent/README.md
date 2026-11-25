@@ -20,13 +20,17 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for full architecture diagrams, port co
 │   ├── ports/                       # Protocol interfaces (Regulatory, LLM, I/O Adapters)
 │   ├── core/                        # Core map-reduce LangGraph subgraph + pipeline builder + HITL gate
 │   ├── adapters/
-│   │   ├── regulatory/              # Mock FCA/CCA knowledge bases + MCP adapters (stdio / HTTP)
+│   │   ├── regulatory/              # MCP client adapters (stdio / Streamable HTTP) for FCA Handbook RAG & CCA
 │   │   ├── llm/                     # LangChain Gateway adapter (reads MODEL_NAME & gateway keys from .env)
-│   │   ├── inbound/                 # Stub Inbound Adapter nodes for all 3 modules
-│   │   └── outbound/                # Stub Outbound Adapter nodes (incl. agentic subgraph stub for Module 2)
-│   └── agent.py                     # Composition root & default compiled graph
+│   │   ├── github_pr.py             # Real PR Review inbound/outbound adapter (`gh` CLI)
+│   │   ├── github_codebase.py       # Real Codebase Review inbound scanner + remediation wiring
+│   │   └── outbound/                # Real GitHub CLI API adapter & LLM code remediation outbound agent
+│   ├── mcp_server/                  # Real Consumer Credit Act 1974 MCP server (`cca.md`) & bootstrap helpers
+│   └── agent.py                     # Composition root & default compiled pipelines (real integrations only)
+├── handbook_rag/                    # Real FCA Handbook RAG MCP server (Qdrant + local embeddings)
 └── tests/
-    └── test_pipeline.py             # End-to-end tests for map-reduce, all 3 modules, HITL, MCP contract
+    ├── fakes.py                     # Test-only mocks & stubs (never imported by production code)
+    └── test_*.py                    # Unit & integration tests for map-reduce, adapters, HITL, MCP contract
 ```
 
 ## Quick Start
@@ -43,12 +47,12 @@ uv run --no-sync --package fca-compliance-agent python -m unittest discover -s 0
 Make sure `.env` is configured at the repository root (`cp .env.example .env`), then run a single command. The wrapper script automatically:
 
 1. Finds or installs `uv` if it is not yet on your `PATH`.
-2. Syncs `fca-compliance-agent` and its `mcp` extra into `.venv` (`uv sync --frozen --inexact --package fca-compliance-agent --extra mcp`) whenever needed.
-3. Starts the local `fca-regulatory-mcp` HTTP server in the background, waits until it is ready, wires `FCA_MCP_URL` / `CCA_MCP_URL`, and shuts it down cleanly when the run finishes.
+2. Syncs `fca-compliance-agent` and its `mcp` / `handbook-rag` extras into `.venv` whenever needed.
+3. Connects to or starts both real regulatory MCP HTTP servers (`handbook_rag/mcp_server.py` for the FCA Handbook RAG and `fca-regulatory-mcp` for the Consumer Credit Act 1974), wires `FCA_MCP_URL` / `CCA_MCP_URL`, and shuts down any servers it started when the run finishes.
 
 - **macOS / Linux:**
   ```bash
-  # Scan a GitHub repo and open a real remediation PR (auto-bootstrapped MCP):
+  # Scan a GitHub repo and open a real remediation PR (auto-bootstrapped real MCP servers):
   ./04_fca_compliance_agent/scripts/run.sh
   ./04_fca_compliance_agent/scripts/run.sh --repo-url https://github.com/natchainsix/safelend-co --branch main
   # Review a real PR and post a real PR comment:
@@ -57,11 +61,9 @@ Make sure `.env` is configured at the repository root (`cp .env.example .env`), 
   ./04_fca_compliance_agent/scripts/run.sh --draft-pr                           # open remediation PR as draft
   ./04_fca_compliance_agent/scripts/run.sh --require-approval                   # interactive HITL gate before GitHub write
   ./04_fca_compliance_agent/scripts/run.sh --no-github                          # local reports only (no PR / no comment)
-  ./04_fca_compliance_agent/scripts/run.sh --module pr_review --synthetic-diff  # offline synthetic PR diff
-  ./04_fca_compliance_agent/scripts/run.sh --module product_spec                # product spec stub review
-  ./04_fca_compliance_agent/scripts/run.sh --mcp-url http://127.0.0.1:8001/mcp  # use an external MCP server
-  ./04_fca_compliance_agent/scripts/run.sh --mcp-port 8005                      # pin background MCP port
-  ./04_fca_compliance_agent/scripts/run.sh --no-mcp                             # use in-memory mock adapters
+  ./04_fca_compliance_agent/scripts/run.sh --fca-mcp-url http://127.0.0.1:8765/mcp  # external FCA Handbook RAG MCP
+  ./04_fca_compliance_agent/scripts/run.sh --cca-mcp-url http://127.0.0.1:8001/mcp  # external CCA 1974 MCP
+  ./04_fca_compliance_agent/scripts/run.sh --fca-mcp-port 8770 --cca-mcp-port 8005  # pin background MCP ports
   ```
 - **Windows (PowerShell):**
   ```powershell
@@ -84,32 +86,28 @@ To install the MCP extra manually (e.g. if running `fca-regulatory-mcp` directly
 uv sync --all-packages --extra mcp
 ```
 
-## Regulatory MCP Server
+## Regulatory MCP Servers
 
-`fca-regulatory-mcp` serves the FCA Handbook and Consumer Credit Act lookups over MCP, using the tool names the agent's
-MCP adapters expect (`search_fca_handbook`, `get_fca_rule`, `query_consumer_credit_act`,
-`get_consumer_credit_act_document`):
+### Consumer Credit Act 1974 (`fca-regulatory-mcp`)
+
+`fca-regulatory-mcp` serves the real Consumer Credit Act 1974 text from the repo-root `cca.md` over MCP
+(`query_consumer_credit_act`, `get_consumer_credit_act_document`):
 
 ```bash
 uv sync --all-packages --extra mcp
 uv run fca-regulatory-mcp                      # stdio: the agent spawns it as a subprocess
-uv run fca-regulatory-mcp --http --port 8001   # Streamable HTTP
+uv run fca-regulatory-mcp --http --port 8001   # Streamable HTTP (set CCA_MCP_URL=http://127.0.0.1:8001/mcp)
 ```
-
-Connect the agent to the HTTP server with `FCA_MCP_URL=http://127.0.0.1:8001/mcp` and `CCA_MCP_URL=http://127.0.0.1:8001/mcp`.
-The HTTP server exposes all four tools at the same URL. Set both variables to that URL.
 
 - **CCA content** is the Act text in the repo-root `cca.md`. Search returns the best passage from each matching section
   (about 1,200 characters, with a `part` field such as `2 of 5`), each with the reference `CCA 1974 s.<number>`.
   `get_consumer_credit_act_document` returns a whole section.
 - **Search** uses BM25 with light stemming, so `withdrawal` and `withdraw` match. An empty result means nothing matched,
   not that the rule does not apply.
-- **FCA content** is the mock Handbook corpus from `MockFCAHandbookAdapter`, because the Handbook text is not in this
-  repo yet. Those passages carry `"corpus": "mock"`.
 
-## FCA Handbook RAG
+### FCA Handbook RAG (`handbook_rag`)
 
-[`handbook_rag`](handbook_rag/README.md) is an MCP server over the FCA Handbook: `search_fca_handbook`,
+[`handbook_rag`](handbook_rag/README.md) is the real MCP server over the FCA Handbook: `search_fca_handbook`,
 `get_fca_section` and `check_fca_citation`. Run it in its own terminal, with `fca-regulatory-mcp` for the Consumer Credit Act,
 then set both URLs in `.env`:
 
@@ -126,9 +124,8 @@ FCA_MCP_URL=http://127.0.0.1:8765/mcp
 CCA_MCP_URL=http://127.0.0.1:8001/mcp
 ```
 
-Each person loads the real text first (SYSC, PRIN, COBS, CONC and the Glossary): see its README. It has no UK GDPR, which
-only the mock rules cover, so with `FCA_MCP_URL` set, UK GDPR rules are not searched. The
-report lists that under "Not checked".
+Each person loads the real text first (SYSC, PRIN, COBS, CONC and the Glossary): see its README. It has no UK GDPR, so
+those rules are not searched, and the report lists that under "Not checked".
 
 ## Swapping Context Modules
 
@@ -137,19 +134,24 @@ from langgraph.checkpoint.memory import InMemorySaver
 from fca_compliance_agent import (
     build_compliance_pipeline,
     build_core_analysis_subgraph,
-    MockFCAHandbookAdapter,
-    MockConsumerCreditActAdapter,
+    build_github_codebase_review_module,
     LangChainComplianceAnalyzer,
-    build_codebase_review_module,
+    MCPConsumerCreditActAdapter,
+    MCPFCAHandbookAdapter,
+    MCPServerConfig,
 )
 
 core = build_core_analysis_subgraph(
-    fca_port=MockFCAHandbookAdapter(),
-    cca_port=MockConsumerCreditActAdapter(),
+    fca_port=MCPFCAHandbookAdapter(
+        server_config=MCPServerConfig(transport="streamable_http", url="http://127.0.0.1:8765/mcp")
+    ),
+    cca_port=MCPConsumerCreditActAdapter(
+        server_config=MCPServerConfig(transport="streamable_http", url="http://127.0.0.1:8001/mcp")
+    ),
     analyzer_port=LangChainComplianceAnalyzer(),
 )
 
-module = build_codebase_review_module()
+module = build_github_codebase_review_module()
 pipeline = build_compliance_pipeline(
     inbound_adapter=module.inbound_node,
     core_subgraph=core,

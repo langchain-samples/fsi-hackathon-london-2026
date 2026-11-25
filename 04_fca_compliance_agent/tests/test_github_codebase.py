@@ -15,13 +15,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from fakes import (
+    LocalMockGitHubClient,
+    MockConsumerCreditActAdapter,
+    MockFCAHandbookAdapter,
+)
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 from test_pipeline import _FakeComplianceAnalyzer
 
 from fca_compliance_agent import (
-    MockConsumerCreditActAdapter,
-    MockFCAHandbookAdapter,
     build_core_analysis_subgraph,
     build_pipeline_for_module,
 )
@@ -30,10 +33,7 @@ from fca_compliance_agent.adapters.github_codebase import (
     build_github_codebase_review_module,
     collect_codebase_units,
 )
-from fca_compliance_agent.adapters.outbound.github_client import (
-    GitHubCLIAdapter,
-    LocalMockGitHubClient,
-)
+from fca_compliance_agent.adapters.outbound.github_client import GitHubCLIAdapter
 from fca_compliance_agent.adapters.regulatory.mcp import parse_mcp_passages
 
 
@@ -416,24 +416,29 @@ class MCPErrorAndEnvTests(unittest.TestCase):
                     load_env.assert_called_once()
                     mock_cca_mcp.assert_called_once()
 
-    def test_build_default_core_subgraph_uses_stdio_cca_mcp_by_default_when_installed(self) -> None:
+    def test_build_default_core_subgraph_always_wires_real_mcp_adapters(self) -> None:
         from fca_compliance_agent import agent as agent_mod
+        from fca_compliance_agent.mcp_server.bootstrap import DEFAULT_FCA_MCP_URL
 
         with (
             mock.patch.object(agent_mod, "load_repo_env"),
-            mock.patch.object(agent_mod, "is_mcp_installed", return_value=True),
             mock.patch.dict(os.environ, {}, clear=False),
+            mock.patch.object(agent_mod, "MCPFCAHandbookAdapter") as mock_fca_mcp,
             mock.patch.object(agent_mod, "MCPConsumerCreditActAdapter") as mock_cca_mcp,
         ):
             os.environ.pop("CCA_MCP_URL", None)
             os.environ.pop("FCA_MCP_URL", None)
             agent_mod.build_default_core_subgraph(
-                fca_port=MockFCAHandbookAdapter(),
                 analyzer_port=_FakeComplianceAnalyzer(),
             )
+            mock_fca_mcp.assert_called_once()
+            fca_cfg = mock_fca_mcp.call_args.kwargs["server_config"]
+            self.assertEqual(fca_cfg.transport, "streamable_http")
+            self.assertEqual(fca_cfg.url, DEFAULT_FCA_MCP_URL)
+
             mock_cca_mcp.assert_called_once()
-            cfg = mock_cca_mcp.call_args.kwargs["server_config"]
-            self.assertEqual(cfg.transport, "stdio")
+            cca_cfg = mock_cca_mcp.call_args.kwargs["server_config"]
+            self.assertEqual(cca_cfg.transport, "stdio")
 
 
 if __name__ == "__main__":

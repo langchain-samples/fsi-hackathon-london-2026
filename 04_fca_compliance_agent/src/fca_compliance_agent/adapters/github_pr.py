@@ -3,10 +3,9 @@
 Inbound  `raw_input` -> `analysis_input` (one AnalysisUnit per changed file) + `adapter_context`
     {"pr_url": "https://github.com/owner/repo/pull/12"}      read a real PR with `gh`
     {"repo": "owner/repo", "pr_number": 12}                  same, without a URL
-    {"diff": "<unified diff text>", "title": "..."}          offline / synthetic PRs, no GitHub call
 
 Outbound `findings_report` -> markdown + JSON review in `reports/`, and by default ONE PR comment
-    via `gh pr comment` when reviewing a real GitHub PR (`pr_url` or `repo` + `pr_number`).
+    via `gh pr comment` when reviewing a GitHub PR (`pr_url` or `repo` + `pr_number`).
     Pass `raw_input["post_to_github"] = False` to save local reports only. When the pipeline runs
     with `require_human_approval=True`, posting requires a human `approve` or `filter` decision.
 """
@@ -47,7 +46,7 @@ def _resolve_pr(raw: dict[str, Any]) -> tuple[str, int]:
         return m.group(1), int(m.group(2))
     repo, number = str(raw.get("repo", "")), raw.get("pr_number")
     if not _REPO.match(repo) or not str(number).isdigit():
-        raise ValueError("Give raw_input 'pr_url', or 'repo' (owner/name) + 'pr_number', or 'diff'.")
+        raise ValueError("Give raw_input 'pr_url' or 'repo' (owner/name) + 'pr_number'.")
     return repo, int(number)
 
 
@@ -87,19 +86,12 @@ def split_diff(diff: str) -> list[AnalysisUnit]:
 
 def make_github_pr_inbound(*, github_client: GitHubClient | None = None):
     def github_pr_inbound(state: PipelineState) -> dict[str, Any]:
-        """Inbound adapter: a GitHub PR (or a raw diff) -> normalised AnalysisInput."""
+        """Inbound adapter: a GitHub PR -> normalised AnalysisInput."""
         raw = state.get("raw_input") or {}
-        if raw.get("diff"):
-            repo, number = str(raw.get("repo", "local/synthetic")), int(raw.get("pr_number", 0))
-            diff = str(raw["diff"])
-            meta = {"title": raw.get("title", "Synthetic PR"), "body": raw.get("summary", ""), "url": None}
-            default_post = False
-        else:
-            repo, number = _resolve_pr(raw)
-            client = github_client or GitHubCLIAdapter(gh_runner=_gh)
-            meta = client.view_pr(repo, number)
-            diff = client.diff_pr(repo, number)
-            default_post = True
+        repo, number = _resolve_pr(raw)
+        client = github_client or GitHubCLIAdapter(gh_runner=_gh)
+        meta = client.view_pr(repo, number)
+        diff = client.diff_pr(repo, number)
 
         units = split_diff(diff)
         analysis_input = AnalysisInput(
@@ -117,7 +109,7 @@ def make_github_pr_inbound(*, github_client: GitHubClient | None = None):
                 "pr_number": number,
                 "pr_url": meta.get("url"),
                 "head_sha": meta.get("headRefOid"),
-                "post_to_github": bool(raw.get("post_to_github", default_post)),
+                "post_to_github": bool(raw.get("post_to_github", True)),
                 "files_skipped": diff.count("diff --git ") - len(units),
             },
         }
@@ -225,7 +217,7 @@ def build_github_pr_review_module(
     client = github_client or GitHubCLIAdapter(gh_runner=_gh)
     return ContextModule(
         name="pr_review",
-        description="GitHub PR (or raw diff) -> markdown/JSON review + PR comment via GitHubClient",
+        description="GitHub PR -> markdown/JSON review + PR comment via GitHubClient",
         inbound_node=make_github_pr_inbound(github_client=client),
         outbound_node=make_github_pr_outbound(github_client=client, reports_dir=reports_dir),
     )

@@ -8,18 +8,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fakes import (
+    LocalMockGitHubClient,
+    MockConsumerCreditActAdapter,
+    MockFCAHandbookAdapter,
+)
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 from test_pipeline import _FakeComplianceAnalyzer
 
 from fca_compliance_agent import (
-    MockConsumerCreditActAdapter,
-    MockFCAHandbookAdapter,
     build_core_analysis_subgraph,
     build_pipeline_for_module,
 )
 from fca_compliance_agent.adapters.github_pr import build_github_pr_review_module, split_diff
-from fca_compliance_agent.adapters.outbound.github_client import LocalMockGitHubClient
 
 DIFF = """diff --git a/src/contracts/withdrawal.py b/src/contracts/withdrawal.py
 index 1111111..2222222 100644
@@ -61,17 +63,14 @@ class SplitDiffTest(unittest.TestCase):
 
 
 class GithubPrAdapterTest(unittest.IsolatedAsyncioTestCase):
-    async def test_raw_diff_writes_local_report_and_never_calls_github(self) -> None:
+    async def test_synthetic_raw_diff_without_pr_identifier_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             mock_gh = LocalMockGitHubClient(output_dir=tmp_path / "mock_github", pr_diff=DIFF)
-            out = await _pipeline(github_client=mock_gh, reports_dir=tmp_path / "reports").ainvoke(
-                {"raw_input": {"diff": DIFF, "title": "Shorten cooling-off"}}
-            )
-            result = out["deliverable_result"]
-            self.assertEqual(result.status, "completed")
-            self.assertFalse(result.metadata["posted_to_github"])
-            self.assertTrue(result.artifacts[0].endswith(".md"))
+            with self.assertRaises(ValueError):
+                await _pipeline(github_client=mock_gh, reports_dir=tmp_path / "reports").ainvoke(
+                    {"raw_input": {"diff": DIFF, "title": "Shorten cooling-off"}}
+                )
             self.assertEqual(mock_gh.viewed_prs, [])
             self.assertEqual(mock_gh.diffed_prs, [])
             self.assertEqual(mock_gh.posted_comments, [])

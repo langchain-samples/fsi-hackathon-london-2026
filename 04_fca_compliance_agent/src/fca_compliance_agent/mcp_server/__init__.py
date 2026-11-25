@@ -1,1 +1,1 @@
-"""MCP server that serves FCA Handbook and Consumer Credit Act lookups to the compliance agent."""
+"""MCP server that serves Consumer Credit Act 1974 lookups to the compliance agent."""
