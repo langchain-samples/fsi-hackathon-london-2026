@@ -1,6 +1,6 @@
 """Public API for the Hexagonal FCA Handbook & Consumer Credit Act Compliance Agent."""
 
-from .adapters.llm import LangChainComplianceAnalyzer, MockComplianceAnalyzer
+from .adapters.llm import LangChainComplianceAnalyzer
 from .adapters.outbound import (
     build_codebase_remediation_outbound_subgraph,
     build_codebase_review_module,
@@ -73,7 +73,6 @@ __all__ = [
     "MCPFCAHandbookAdapter",
     "MCPServerConfig",
     "MCPToolMapping",
-    "MockComplianceAnalyzer",
     "MockConsumerCreditActAdapter",
     "MockFCAHandbookAdapter",
     "OutboundAdapterNode",

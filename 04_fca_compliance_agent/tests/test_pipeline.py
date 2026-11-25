@@ -7,6 +7,10 @@ Covers:
   4. Optional HITL LangGraph interrupt() gate: approve, filter, and reject flows
   5. MCP driven adapter tool-argument mapping & response normalisation plugged into Core
   6. Static AST hexagonal boundary check ensuring domain/ports/core have zero adapter/infra imports
+
+Note: Unit tests inject a lightweight test-only `_FakeComplianceAnalyzer` implementing
+`ComplianceAnalyzerPort` so CI stays deterministic and secret-free. The production package
+uses `LangChainComplianceAnalyzer` directly via `.env`.
 """
 
 from __future__ import annotations
@@ -22,14 +26,18 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from fca_compliance_agent import (
+    AnalysisInput,
     AnalysisUnit,
+    Finding,
     MCPConsumerCreditActAdapter,
     MCPFCAHandbookAdapter,
     MCPToolMapping,
-    MockComplianceAnalyzer,
     MockConsumerCreditActAdapter,
     MockFCAHandbookAdapter,
     PullRequestDiffLocation,
+    RegulatoryCitation,
+    RegulatoryPassage,
+    TriagedUnit,
     build_codebase_review_module,
     build_core_analysis_subgraph,
     build_pipeline_for_module,
@@ -38,11 +46,104 @@ from fca_compliance_agent import (
 )
 
 
-def _build_mock_core():
+class _FakeComplianceAnalyzer:
+    """Test-only deterministic fake implementing `ComplianceAnalyzerPort` for offline CI."""
+
+    _NOISE = (".css", ".svg", "package-lock", "favicon")
+    _RULES = (
+        ("guaranteed approval", "critical", "CONC 5.2A", "CCA 1974 s.140A", "Missing affordability / misleading claim"),
+        ("skip_affordability", "critical", "CONC 5.2A", "CCA 1974 s.140A", "Missing affordability check"),
+        ("withdrawal_days = 7", "critical", "CONC 4.2", "CCA 1974 s.66A", "Withdrawal window shorter than 14 days"),
+        ("7-day cooling", "critical", "CONC 4.2", "CCA 1974 s.66A", "Cooling-off window shorter than 14 days"),
+        ("default_notice_days = 5", "high", "CONC 7.3", "CCA 1974 s.87", "Default notice cure period under 14 days"),
+        ("waive section 75", "high", "PRIN 2A", "CCA 1974 s.75", "Attempted waiver of Section 75 liability"),
+        ("hide_apr", "medium", "CONC 3.5", "CCA 1974 s.55", "Representative APR omitted or hidden"),
+    )
+
+    async def triage_units(self, analysis_input: AnalysisInput) -> list[TriagedUnit]:
+        decisions: list[TriagedUnit] = []
+        for unit in analysis_input.units:
+            meta = f"{unit.title} {unit.location.model_dump()}".lower()
+            if any(m in meta for m in self._NOISE):
+                decisions.append(TriagedUnit(unit_id=unit.unit_id, is_relevant=False, rationale="Noise asset"))
+                continue
+            sections: list[str] = []
+            low = unit.content.lower()
+            if "withdraw" in low or "cooling" in low:
+                sections.append("s.66A")
+            if "default" in low:
+                sections.append("s.87")
+            if "section 75" in low:
+                sections.append("s.75")
+            decisions.append(
+                TriagedUnit(
+                    unit_id=unit.unit_id,
+                    is_relevant=True,
+                    rationale="Credit/compliance relevant",
+                    fca_queries=[f"{unit.title} {unit.content[:120]}"],
+                    cca_queries=[f"{unit.title} {unit.content[:120]}"],
+                    cca_sections=sections,
+                )
+            )
+        return decisions
+
+    async def analyze_unit(
+        self,
+        *,
+        unit: AnalysisUnit,
+        analysis_input_summary: str,
+        fca_passages: list[RegulatoryPassage],
+        cca_passages: list[RegulatoryPassage],
+    ) -> list[Finding]:
+        low = unit.content.lower()
+        findings: list[Finding] = []
+        seen_titles: set[str] = set()
+        for trigger, severity, fca_pref, cca_pref, title in self._RULES:
+            if trigger not in low or title in seen_titles:
+                continue
+            seen_titles.add(title)
+            fca_match = [p for p in fca_passages if p.reference.upper().startswith(fca_pref.upper())] or fca_passages[:1]
+            cca_match = [p for p in cca_passages if p.reference.upper().startswith(cca_pref.upper())] or cca_passages[:1]
+            findings.append(
+                Finding(
+                    unit_id=unit.unit_id,
+                    title=title,
+                    description=f"Triggered on '{trigger}' in {unit.title} ({analysis_input_summary[:60]}).",
+                    severity=severity,  # type: ignore[arg-type]
+                    status="non_compliant",
+                    location=unit.location,
+                    evidence_excerpt=unit.content.strip()[:200],
+                    fca_citations=[
+                        RegulatoryCitation(source=p.source, reference=p.reference, excerpt=p.text[:120], url=p.url)
+                        for p in fca_match
+                    ],
+                    cca_citations=[
+                        RegulatoryCitation(source=p.source, reference=p.reference, excerpt=p.text[:120], url=p.url)
+                        for p in cca_match
+                    ],
+                    fca_vs_cca_comparison=f"Cross-checked {fca_pref} against {cca_pref}.",
+                    remediation_guidance=f"Remediate '{trigger}' to satisfy {fca_pref} and {cca_pref}.",
+                )
+            )
+            break
+        return findings
+
+    async def synthesize_executive_summary(
+        self,
+        *,
+        analysis_input: AnalysisInput,
+        findings: list[Finding],
+    ) -> str:
+        if not findings:
+            return f"No FCA/CCA findings for '{analysis_input.title}'."
+        return f"Found {len(findings)} FCA/CCA finding(s) in '{analysis_input.title}'."
+
+
+def _build_test_core():
     return build_core_analysis_subgraph(
         fca_port=MockFCAHandbookAdapter(),
         cca_port=MockConsumerCreditActAdapter(),
-        analyzer_port=MockComplianceAnalyzer(),
+        analyzer_port=_FakeComplianceAnalyzer(),
     )
 
 
@@ -50,7 +151,7 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
     async def test_pr_review_module_end_to_end(self) -> None:
         pipeline = build_pipeline_for_module(
             build_pr_review_module(),
-            core_subgraph=_build_mock_core(),
+            core_subgraph=_build_test_core(),
         )
 
         result = await pipeline.ainvoke(
@@ -75,26 +176,23 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(report.findings), 2)
         self.assertEqual([f.finding_id for f in report.findings], ["F-001", "F-002"])
 
-        # Both FCA & CCA citations grounded on every finding
         for finding in report.findings:
             self.assertTrue(finding.fca_citations, f"Missing FCA citations on {finding.title}")
             self.assertTrue(finding.cca_citations, f"Missing CCA citations on {finding.title}")
             self.assertTrue(finding.fca_vs_cca_comparison)
 
-        # Outbound adapter received adapter_context pass-through
         self.assertEqual(deliverable.module_name, "pr_review")
         self.assertEqual(deliverable.status, "completed")
         self.assertEqual(deliverable.metadata["head_sha"], "deadbeef77")
         self.assertEqual(len(deliverable.metadata["pr_comments"]), 2)
 
-        # Core private state keys must NOT leak into PipelineState
         self.assertNotIn("triaged_units", result)
         self.assertNotIn("unit_findings", result)
 
     async def test_codebase_review_agentic_outbound_subgraph(self) -> None:
         pipeline = build_pipeline_for_module(
             build_codebase_review_module(),
-            core_subgraph=_build_mock_core(),
+            core_subgraph=_build_test_core(),
         )
 
         result = await pipeline.ainvoke(
@@ -116,7 +214,6 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.overall_verdict, "non_compliant")
         self.assertEqual(len(report.findings), 2)
 
-        # Verify multi-step agentic outbound subgraph ran and read workspace_path
         self.assertEqual(deliverable.module_name, "codebase_review")
         self.assertEqual(deliverable.status, "completed")
         self.assertEqual(
@@ -126,14 +223,13 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
             set(deliverable.metadata["edited_files"]),
             {"lending/collections/default_notice.py", "lending/marketing/banner.py"},
         )
-        # Outbound subgraph private keys must NOT leak into PipelineState
         self.assertNotIn("planned_edits", result)
         self.assertNotIn("applied_files", result)
 
     async def test_product_spec_module_end_to_end(self) -> None:
         pipeline = build_pipeline_for_module(
             build_product_spec_module(),
-            core_subgraph=_build_mock_core(),
+            core_subgraph=_build_test_core(),
         )
 
         result = await pipeline.ainvoke(
@@ -161,7 +257,7 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
     async def test_zero_relevant_units_short_circuits_cleanly(self) -> None:
         pipeline = build_pipeline_for_module(
             build_pr_review_module(),
-            core_subgraph=_build_mock_core(),
+            core_subgraph=_build_test_core(),
         )
 
         result = await pipeline.ainvoke(
@@ -190,11 +286,10 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
         checkpointer = InMemorySaver()
         pipeline = build_pipeline_for_module(
             build_pr_review_module(),
-            core_subgraph=_build_mock_core(),
+            core_subgraph=_build_test_core(),
             checkpointer=checkpointer,
         )
 
-        # 1) Interrupt and resume with `filter` (approve only F-001)
         cfg_filter = {"configurable": {"thread_id": "thread-filter-1"}}
         paused = await pipeline.ainvoke(
             {"raw_input": {"pr_number": 101}, "require_human_approval": True},
@@ -218,7 +313,6 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resumed["deliverable_result"].status, "completed")
         self.assertEqual(len(resumed["deliverable_result"].metadata["pr_comments"]), 1)
 
-        # 2) Interrupt and resume with `reject` (outbound adapter must NOT execute)
         cfg_reject = {"configurable": {"thread_id": "thread-reject-1"}}
         paused_reject = await pipeline.ainvoke(
             {"raw_input": {"pr_number": 102}, "require_human_approval": True},
@@ -238,7 +332,6 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
 
         async def fake_fca_mcp(tool_name: str, args: dict[str, Any]) -> Any:
             calls.append((tool_name, args))
-            # Simulate an official MCP CallToolResult containing JSON text content
             payload = {
                 "results": [
                     {
@@ -283,7 +376,7 @@ class TestHexagonalCompliancePipelines(unittest.IsolatedAsyncioTestCase):
         core = build_core_analysis_subgraph(
             fca_port=fca_mcp,
             cca_port=cca_mcp,
-            analyzer_port=MockComplianceAnalyzer(),
+            analyzer_port=_FakeComplianceAnalyzer(),
         )
         pipeline = build_pipeline_for_module(build_pr_review_module(), core_subgraph=core)
 
@@ -349,8 +442,6 @@ class TestHexagonalArchitectureBoundaries(unittest.TestCase):
                     elif isinstance(node, ast.ImportFrom):
                         mod = node.module or ""
                         if node.level > 0:
-                            # Resolve relative imports: e.g. `from .adapters import ...` inside `ports/`
-                            # is `ports.adapters`, NOT `fca_compliance_agent.adapters`.
                             rel_parts = py_file.relative_to(pkg_root).parts[:-1]
                             base = rel_parts[: max(0, len(rel_parts) - (node.level - 1))]
                             resolved = ".".join((*base, mod)) if mod else ".".join(base)
