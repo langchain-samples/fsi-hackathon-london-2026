@@ -89,14 +89,11 @@ The HTTP server exposes all four tools at the same URL. Set both variables to th
 - **FCA content** is the mock Handbook corpus from `MockFCAHandbookAdapter`, because the Handbook text is not in this
   repo yet. Those passages carry `"corpus": "mock"`.
 
-## The `fca_compliance_reviewer` agent
+## FCA Handbook RAG
 
-Each relevant change is reviewed by one agent, which searches and reads the FCA Handbook and the Consumer Credit Act for
-itself. Its prompt is `REVIEWER_SYSTEM_PROMPT` in `core/prompts.py`, and `core/review.py` checks its work in code. See
-[ARCHITECTURE.md](ARCHITECTURE.md), section 2.3.
-
-It needs two MCP servers: the Handbook RAG in [`handbook_rag`](handbook_rag/README.md), and `fca-regulatory-mcp` for the
-Act. Run each in its own terminal, then set the URLs in `.env`:
+[`handbook_rag`](handbook_rag/README.md) is an MCP server over the FCA Handbook: `search_fca_handbook`,
+`get_fca_section` and `check_citation`. Run it in its own terminal, with `fca-regulatory-mcp` for the Consumer Credit Act,
+then set both URLs in `.env`:
 
 ```bash
 cd 04_fca_compliance_agent/handbook_rag && uv run --no-sync python mcp_server.py
@@ -111,8 +108,8 @@ FCA_MCP_URL=http://127.0.0.1:8765/mcp
 CCA_MCP_URL=http://127.0.0.1:8001/mcp
 ```
 
-The FCA tools in `fca-regulatory-mcp` serve mock rules and cannot read a section or check a quote, so with that server as
-`FCA_MCP_URL` every change ends as "needs review". Set `COMPLIANCE_REVIEWER=workflow` to use the earlier fixed step.
+It holds **fictional sample rules only**, until real FCA text is loaded, and has no CONC or UK GDPR. Keep the mock rules
+for a consumer credit demo until then, by leaving `FCA_MCP_URL` unset.
 
 ## Swapping Context Modules
 

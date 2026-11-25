@@ -1,4 +1,4 @@
-"""The Handbook RAG as an MCP server, used by the `fca_compliance_reviewer` agent. Run it from this folder:
+"""The Handbook RAG as an MCP server, for the compliance agent. Run it from this folder:
 
     uv run --no-sync python mcp_server.py            # HTTP on http://127.0.0.1:8765/mcp, shared by every agent call
     uv run --no-sync python mcp_server.py --stdio    # started by one MCP client, over stdin and stdout

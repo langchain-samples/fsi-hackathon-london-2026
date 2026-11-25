@@ -32,7 +32,7 @@ class FCAHandbookPort(Protocol):
 
 @runtime_checkable
 class FCAHandbookResearchPort(Protocol):
-    """What the `fca_compliance_reviewer` agent needs: search widely, read in depth, check the quote."""
+    """What the Handbook RAG offers a reviewing agent: search widely, read in depth, check the quote."""
 
     async def search(
         self,

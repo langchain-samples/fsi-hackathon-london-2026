@@ -255,9 +255,6 @@ def make_synthesize_report_node(analyzer_port: ComplianceAnalyzerPort):
             analysis_input=analysis_input,
             findings=findings,
         )
-        # Written by code, so the model's summary cannot leave it out.
-        notes = list(dict.fromkeys(state.get("review_notes", [])))
-        executive_summary = "\n\n".join([*notes, executive_summary])
 
         units_triaged_in = sum(1 for t in triaged if t.is_relevant)
         units_total = len(analysis_input.units)

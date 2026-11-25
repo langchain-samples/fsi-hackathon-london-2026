@@ -4,7 +4,6 @@ Uses `LangChainComplianceAnalyzer` (configured via the repo root `.env`) by defa
 Regulatory tools default to the in-memory mock FCA/CCA adapters until external MCP
 servers are configured via environment variables:
   - `FCA_MCP_URL=http://...` -> uses `MCPFCAHandbookAdapter` over Streamable HTTP
-  - `COMPLIANCE_REVIEWER=workflow` -> replaces the `fca_compliance_reviewer` agent with the earlier fixed step
   - `CCA_MCP_URL=http://...` -> uses `MCPConsumerCreditActAdapter` over Streamable HTTP
 """
 
@@ -13,7 +12,7 @@ from __future__ import annotations
 import os
 
 from .adapters.github_pr import build_github_pr_review_module
-from .adapters.llm import FCAComplianceReviewer, LangChainComplianceAnalyzer
+from .adapters.llm import LangChainComplianceAnalyzer
 from .adapters.outbound import (
     build_codebase_review_module,
     build_product_spec_module,
@@ -26,12 +25,7 @@ from .adapters.regulatory import (
     MockFCAHandbookAdapter,
 )
 from .core import build_core_analysis_subgraph, build_pipeline_for_module
-from .ports import (
-    ComplianceAnalyzerPort,
-    ComplianceReviewerPort,
-    ConsumerCreditActPort,
-    FCAHandbookPort,
-)
+from .ports import ComplianceAnalyzerPort, ConsumerCreditActPort, FCAHandbookPort
 
 
 def build_default_core_subgraph(
@@ -39,7 +33,6 @@ def build_default_core_subgraph(
     fca_port: FCAHandbookPort | None = None,
     cca_port: ConsumerCreditActPort | None = None,
     analyzer_port: ComplianceAnalyzerPort | None = None,
-    reviewer_port: ComplianceReviewerPort | None = None,
 ):
     """Wire the Core Analysis Subgraph from explicit ports or environment config."""
     if fca_port is None:
@@ -65,14 +58,10 @@ def build_default_core_subgraph(
     if analyzer_port is None:
         analyzer_port = LangChainComplianceAnalyzer()
 
-    if reviewer_port is None and os.environ.get("COMPLIANCE_REVIEWER", "agent") != "workflow":
-        reviewer_port = FCAComplianceReviewer(fca_port=fca_port, cca_port=cca_port)
-
     return build_core_analysis_subgraph(
         fca_port=fca_port,
         cca_port=cca_port,
         analyzer_port=analyzer_port,
-        reviewer_port=reviewer_port,
     )
 
 

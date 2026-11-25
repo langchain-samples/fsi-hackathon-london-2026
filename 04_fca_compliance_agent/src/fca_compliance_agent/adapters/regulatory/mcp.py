@@ -10,6 +10,7 @@ and response formats are fully configurable via `MCPToolMapping` without modifyi
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -25,6 +26,9 @@ from ...domain.models import (
 
 # Low-level async MCP tool invocation callable (allows injecting a fake transport in unit tests).
 MCPCaller = Callable[[str, dict[str, Any]], Awaitable[Any]]
+
+
+SNIPPET_END = "[...]"  # how the Handbook RAG marks text that it cut short
 
 
 class MCPToolError(RuntimeError):
@@ -349,7 +353,15 @@ class MCPFCAHandbookAdapter(_BaseMCPClientAdapter):
             args[self._mapping.filter_arg] = sourcebooks
 
         raw = await self._call_tool(self._mapping.search_tool, args)
-        return parse_mcp_passages(raw, source="fca_handbook", default_reference="FCA")
+        passages = parse_mcp_passages(raw, source="fca_handbook", default_reference="FCA")
+        return list(await asyncio.gather(*(self._in_full(p) for p in passages)))
+
+    async def _in_full(self, passage: RegulatoryPassage) -> RegulatoryPassage:
+        """Callers of `search_rules` judge on its text, so a snippet is replaced by the whole provision."""
+        if not passage.text.endswith(SNIPPET_END) or not self._mapping.section_tool:
+            return passage
+        section = await self.get_section(passage.reference)
+        return next((p for p in section.passages if p.reference == passage.reference), passage)
 
     async def get_rule(self, reference: str) -> RegulatoryPassage | None:
         if self._mapping.fetch_tool:
@@ -364,7 +376,7 @@ class MCPFCAHandbookAdapter(_BaseMCPClientAdapter):
         results = await self.search_rules(reference, top_k=1)
         return results[0] if results else None
 
-    # `FCAHandbookResearchPort`, for the fca_compliance_reviewer agent -----------------------------
+    # `FCAHandbookResearchPort`, for a reviewing agent ------------------------------------------------
 
     async def search(
         self,

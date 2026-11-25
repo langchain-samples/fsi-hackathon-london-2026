@@ -71,4 +71,4 @@ its neighbours on each side. `complete` is then false and `outline` lists the re
 With the local model, embedding sends nothing off this machine. With OpenAI embeddings, indexed text and queries go to
 the gateway. With `LANGSMITH_TRACING=true`, tool inputs and
 results also go to LangSmith. FCA credentials are only for downloading data, never for searching: keep them in
-`.env.fca` here, not in the shared `.env`, and never commit them.
+`.env.fca` in the repo root, not in the shared `.env`, and never commit them.

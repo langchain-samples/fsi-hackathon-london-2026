@@ -18,9 +18,10 @@ def _date(as_of: str | None) -> date:
 
 
 def _describe(row: dict, text: str) -> dict[str, Any]:
+    warning = ["FICTIONAL SAMPLE, NOT FCA TEXT"] if row["source"] == "fictional-sample" else []
     return {
         "reference": row["citation"],
-        "title": " > ".join([*row["heading_path"], *([row["subheading"]] if row["subheading"] else [])]),
+        "title": " > ".join([*warning, *row["heading_path"], *([row["subheading"]] if row["subheading"] else [])]),
         "text": text,
         "provision_type": row["provision_type"],
         "binding": row["provision_type"] in store.BINDING,

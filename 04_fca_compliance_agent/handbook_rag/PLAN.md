@@ -8,11 +8,12 @@ sub-agent per section, checked quotes) but is a separate project. Written 25 Nov
 | Piece | State |
 |---|---|
 | Snapshot format, index, hybrid search, agent tools, quote checks | Built and tested on fictional data |
-| FCA API downloader | **Blocked**: needs the API docs (behind sign-in) and a token |
+| FCA API downloader | **Blocked**: needs the API docs, which are behind sign-in. The token is in `.env.fca` |
+| Real FCA text | **None yet.** Only 13 fictional provisions and 3 terms have been embedded, for tests |
 | Local embeddings (`bge-small-en-v1.5`) | Built and tested, offline too. 5 of 6 test queries find their rule in the top 3 of 12 fictional rules, so not yet evidence about real text |
 | Gateway embeddings | Not used. On 25 November 2026 the gateway refused `text-embedding-3-small` (403, policy "Workshop Model Access") |
 | MCP server over HTTP with three tools | Built and tested with the core agent's adapter, including parallel calls |
-| `fca_compliance_reviewer` agent | Built and tested with a scripted model. **Not yet run with a real LLM** |
+| Reviewing agent (FCA and CCA) | **Placeholder.** Built separately by a teammate. The RAG offers it `FCAHandbookResearchPort` |
 | Version check and refresh | Not started, see below |
 
 ## Decisions
@@ -25,7 +26,7 @@ sub-agent per section, checked quotes) but is a separate project. Written 25 Nov
 | Embeddings | Local model, so any demo PC can run it. It must be the same model for indexing and searching |
 | Where the code lives | `04_fca_compliance_agent/handbook_rag`, run as a separate MCP server. Its packages are the `handbook-rag` extra |
 | Tools | `search_fca_handbook`, `get_fca_section`, `check_citation` |
-| What is an agent | Only the FCA and CCA review of each change. Triage and the summary stay single LLM steps |
+| What is an agent | Only the FCA and CCA review of each change, built separately. Triage and the summary stay single LLM steps |
 | CONC (consumer credit) | **Open.** Suggested, because the core agent mostly cites it. The Consumer Credit Act itself is not in the Handbook |
 | Qdrant storage | On-disk folder (`.qdrant`) on the demo laptop. No Qdrant Cloud or server for now |
 
@@ -59,7 +60,7 @@ All the options, without running our own Qdrant server:
 
 ### Credentials
 
-- Put the FCA username and API token in `04_fca_compliance_agent/handbook_rag/.env.fca` (git-ignored). Never the website password.
+- Put the FCA username and API token in `.env.fca` in the repo root (git-ignored). Never the website password.
 - Only the downloader process may read that file. The agent and its tools must not load it, so do not put the token in
   the shared `.env`, which every agent loads.
 - If an agent is ever given a shell or file access, run it where `.env` and `.env.fca` are not readable.
@@ -101,9 +102,9 @@ B. Version-check node, at the start of the PR agent. It needs no FCA credentials
 Open points: does the API offer a last-modified date, ETag or change list; what are the rate limits; does the server
 version of Qdrant become necessary (local mode allows one process, so a refresh cannot run while an agent is open).
 
-## Next: the agent
+## Next: with the agent's author
 
-- [ ] Run it with the real LLM on sample pull requests, and tune the prompt on what goes wrong.
+- [ ] Agree that the agent uses `search`, `get_section` and `check_citation`, and that code checks every quote afterwards.
 - [ ] 10 to 20 labelled PRs, with separate scores for retrieval and verdicts.
 - [ ] Give triage the whole change: it sees only the first 1,500 characters, and can drop a change.
 

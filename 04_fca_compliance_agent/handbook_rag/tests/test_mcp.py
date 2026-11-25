@@ -11,9 +11,12 @@ from pathlib import Path
 import pytest
 from mcp import Client, StdioServerParameters
 from mcp_server import server
+from tests.conftest import SAMPLE
 from utils import store
+from utils.schema import Provision, Snapshot
 
 ROOT = Path(__file__).resolve().parent.parent
+LONG_RULE = "A firm must keep careful records of every decision. " * 20 + "Except on Sundays."
 NAMES = {"search_fca_handbook", "get_fca_section", "check_citation"}
 
 
@@ -56,7 +59,10 @@ def test_a_missing_index_is_an_mcp_error(empty_index):
 
 
 @pytest.fixture
-def http_server(index):
+def http_server(empty_index):
+    snapshot = Snapshot.load(SAMPLE)
+    snapshot.provisions.append(Provision(ref="XBIG 1.1.1R", provision_type="R", text=LONG_RULE))
+    store.build_index(snapshot, "handbook_sample")
     store.close()  # hand the folder over to the server process
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -83,6 +89,10 @@ def test_the_core_agents_adapter_works_with_this_server(http_server):
         found = await adapter.search_rules("XSYS 4.2.1R", top_k=3)
         assert found[0].reference == "XSYS 4.2.1R" and found[0].metadata["source"] == "fictional-sample"
         assert await adapter.search_rules("testing", sourcebooks=["CONC", "PRIN 2A"]) == []
+        # The fixed review step judges on search_rules, so it must get whole rules and not snippets.
+        long = await adapter.search_rules("XBIG 1.1.1R", top_k=1)
+        assert long[0].text == LONG_RULE
+        assert (await adapter.search("XBIG 1.1.1R", top_k=1)).passages[0].text.endswith("[...]")
         section = await adapter.get_section("XSYS 4.1.2G")
         assert [p.reference for p in section.passages] == ["XSYS 4.1.1R", "XSYS 4.1.2G", "XSYS 4.1.3R"]
         assert section.complete and "emergency change" in section.definitions and section.links == ["XSYS 4.2.1R"]

@@ -54,7 +54,8 @@ def test_search_by_reference_puts_the_provision_first(index):
 def test_search_results_say_what_they_are(index):
     result = next(r for r in search_fca_handbook("XSYS 4.1.2G", as_of=TODAY)["results"] if r["reference"] == "XSYS 4.1.2G")
     assert (result["binding"], result["section"], result["source"]) == (False, "XSYS 4.1", "fictional-sample")
-    assert result["title"].endswith("XSYS 4.1 Testing") and result["snapshot_date"] == "2026-11-25"
+    assert result["title"].startswith("FICTIONAL SAMPLE") and result["title"].endswith("XSYS 4.1 Testing")
+    assert result["snapshot_date"] == "2026-11-25"
 
 
 def test_search_returns_snippets(empty_index):

@@ -201,18 +201,6 @@ class Finding(BaseModel):
     confidence: float = Field(default=0.8, ge=0.0, le=1.0)
 
 
-class UnitReview(BaseModel):
-    """What the `fca_compliance_reviewer` agent returns for one unit, before code checks it."""
-
-    decision: Literal["issues_found", "no_issue", "needs_review"]
-    rationale: str
-    findings: list[Finding] = Field(default_factory=list)
-    # What the agent actually did, recorded by code:
-    sections_read: list[RegulatoryPassage] = Field(default_factory=list)
-    tool_calls: list[str] = Field(default_factory=list)
-    problems: list[str] = Field(default_factory=list, description="Tool failures, limits reached and similar")
-
-
 class FindingsReport(BaseModel):
     """Structured compliance findings report emitted by the Core Analysis Subgraph."""
 
