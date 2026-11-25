@@ -1,5 +1,30 @@
 # Transaction Monitoring Workshop
 
+> **Integrated build (Marcus).** `agent.py` is now the integrated build: a rules engine triages every payment in code,
+> an investigator model explains medium and high alerts, an auditor model checks the explanation, and a person decides
+> every alert. Code decides what is suspicious and what the policy requires; the models explain and check; neither can
+> approve or block. The workshop text below describes the original starter agent; its notebooks still import the
+> original tools, which are kept in `tools/`.
+>
+> | Step | Run by | Where |
+> |------|--------|-------|
+> | 1 Receive, 2 Client context | Code | `utils/nodes.py: load_context` (notes in date only, 6.6) |
+> | 3 Triage | Code | `tools/rules.py` with `rules/retail_cards.yaml`: rules R-01 to R-05, score, band, sample |
+> | 4 Route | Code | low, not sampled: approved by the rules. Medium, high or sampled: investigator |
+> | 5 Investigate | Model | `instructions.md` → `InvestigationReport` (`utils/schemas.py`) |
+> | 6 Audit | Model + code | `auditor.md` → `AuditResult`; `check_facts` looks up every cited value. Returned at most twice |
+> | 7 Human review, 8 Record | Person, code | `record_decision`: `interrupt()`, then the decision record in ("decisions", user_id) |
+> | 9 Feedback to KYC | Code | control tower adapter: alerts (3.5), refresh flag due in 10 business days (6.5, 5.5) |
+>
+> Band cut-offs come from the run context (`MyAgentContext.grey_zone`), which the control tower sets from the approved
+> policy: medium from 30 and high from 70, or medium from 20 for high-risk clients under PS26-7 (6.3).
+> The auditor's verdict is attached to the investigator's run in LangSmith as `auditor_verdict` feedback.
+>
+> Run it on its own in Studio: `uv run langgraph dev` here, send `New transaction: TX-2004` with context
+> `{"user_id": "USR-002", "kyc_rating": "high", "grey_zone": [20, 70]}`, and answer the pause with
+> `{"decision": "block", "note": "..."}`. Tests (offline, from the repo root):
+> `uv run pytest -q 00_control_tower/tests`.
+
 A hands-on tutorial for learning LangChain by building a fraud-monitoring agent with **memory** and **human
 review**, then evaluating and improving it with LangSmith.
 
