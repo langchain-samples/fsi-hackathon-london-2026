@@ -5,16 +5,15 @@ Inbound  `raw_input` -> `analysis_input` (one AnalysisUnit per changed file) + `
     {"repo": "owner/repo", "pr_number": 12}                  same, without a URL
     {"diff": "<unified diff text>", "title": "..."}          offline / synthetic PRs, no GitHub call
 
-Outbound `findings_report` -> markdown + JSON review in `reports/`, and optionally ONE PR comment.
-    Posting is off by default. It only happens when `raw_input["post_to_github"]` is true AND the
-    pipeline ran with `require_human_approval=True` AND a human approved (or filtered) the findings.
+Outbound `findings_report` -> markdown + JSON review in `reports/`, and by default ONE PR comment
+    via `gh pr comment` when reviewing a real GitHub PR (`pr_url` or `repo` + `pr_number`).
+    Pass `raw_input["post_to_github"] = False` to save local reports only. When the pipeline runs
+    with `require_human_approval=True`, posting requires a human `approve` or `filter` decision.
 """
 
 from __future__ import annotations
 
-import json
 import re
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +26,7 @@ from ..domain.models import (
 )
 from ..domain.state import PipelineState
 from ..ports.adapters import ContextModule
+from .outbound.github_client import GitHubCLIAdapter, GitHubClient, run_gh
 
 REPORTS_DIR = Path(__file__).resolve().parents[3] / "reports"  # 04_fca_compliance_agent/reports
 
@@ -36,13 +36,7 @@ _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 _SKIP = re.compile(r"(\.lock|lock\.json|\.png|\.jpe?g|\.gif|\.pdf|\.ico|\.svg)$|(^|/)(uv|poetry|yarn)\.lock$")
 MAX_FILE_CHARS = 12_000  # ponytail: hard truncation per file; split into hunks if big PRs miss findings
 
-
-def _gh(*args: str) -> str:
-    """Run `gh` with list args (no shell, so PR data can't inject commands)."""
-    done = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8", timeout=60)
-    if done.returncode != 0:
-        raise RuntimeError(f"gh {args[0]} {args[1]} failed: {done.stderr.strip()[:300]}")
-    return done.stdout
+_gh = run_gh
 
 
 def _resolve_pr(raw: dict[str, Any]) -> tuple[str, int]:
@@ -91,38 +85,47 @@ def split_diff(diff: str) -> list[AnalysisUnit]:
     return units
 
 
-def github_pr_inbound(state: PipelineState) -> dict[str, Any]:
-    """Inbound adapter: a GitHub PR (or a raw diff) -> normalised AnalysisInput."""
-    raw = state.get("raw_input") or {}
-    if raw.get("diff"):
-        repo, number = str(raw.get("repo", "local/synthetic")), int(raw.get("pr_number", 0))
-        diff = str(raw["diff"])
-        meta = {"title": raw.get("title", "Synthetic PR"), "body": raw.get("summary", ""), "url": None}
-    else:
-        repo, number = _resolve_pr(raw)
-        meta = json.loads(_gh("pr", "view", str(number), "--repo", repo, "--json", "title,body,url,headRefOid"))
-        diff = _gh("pr", "diff", str(number), "--repo", repo)
+def make_github_pr_inbound(*, github_client: GitHubClient | None = None):
+    def github_pr_inbound(state: PipelineState) -> dict[str, Any]:
+        """Inbound adapter: a GitHub PR (or a raw diff) -> normalised AnalysisInput."""
+        raw = state.get("raw_input") or {}
+        if raw.get("diff"):
+            repo, number = str(raw.get("repo", "local/synthetic")), int(raw.get("pr_number", 0))
+            diff = str(raw["diff"])
+            meta = {"title": raw.get("title", "Synthetic PR"), "body": raw.get("summary", ""), "url": None}
+            default_post = False
+        else:
+            repo, number = _resolve_pr(raw)
+            client = github_client or GitHubCLIAdapter(gh_runner=_gh)
+            meta = client.view_pr(repo, number)
+            diff = client.diff_pr(repo, number)
+            default_post = True
 
-    units = split_diff(diff)
-    analysis_input = AnalysisInput(
-        target_id=f"{repo}#{number}",
-        source_type="pr_review",
-        title=str(meta.get("title") or f"PR #{number}"),
-        # PR description is author-controlled: the core prompt sees it as context, not instructions.
-        summary=str(meta.get("body") or "")[:2000],
-        units=units,
-    )
-    return {
-        "analysis_input": analysis_input,
-        "adapter_context": {
-            "repo": repo,
-            "pr_number": number,
-            "pr_url": meta.get("url"),
-            "head_sha": meta.get("headRefOid"),
-            "post_to_github": bool(raw.get("post_to_github", False)),
-            "files_skipped": diff.count("diff --git ") - len(units),
-        },
-    }
+        units = split_diff(diff)
+        analysis_input = AnalysisInput(
+            target_id=f"{repo}#{number}",
+            source_type="pr_review",
+            title=str(meta.get("title") or f"PR #{number}"),
+            # PR description is author-controlled: the core prompt sees it as context, not instructions.
+            summary=str(meta.get("body") or "")[:2000],
+            units=units,
+        )
+        return {
+            "analysis_input": analysis_input,
+            "adapter_context": {
+                "repo": repo,
+                "pr_number": number,
+                "pr_url": meta.get("url"),
+                "head_sha": meta.get("headRefOid"),
+                "post_to_github": bool(raw.get("post_to_github", default_post)),
+                "files_skipped": diff.count("diff --git ") - len(units),
+            },
+        }
+
+    return github_pr_inbound
+
+
+github_pr_inbound = make_github_pr_inbound()
 
 
 def render_markdown(report: FindingsReport) -> str:
@@ -155,58 +158,72 @@ def render_markdown(report: FindingsReport) -> str:
     return "\n".join(lines)
 
 
-def github_pr_outbound(state: PipelineState) -> dict[str, Any]:
-    """Outbound adapter: write the review to reports/, and post one PR comment only if approved."""
-    report = state["findings_report"]
-    ctx = state.get("adapter_context") or {}
-    REPORTS_DIR.mkdir(exist_ok=True)
-    md_path = REPORTS_DIR / f"{report.report_id}.md"
-    json_path = REPORTS_DIR / f"{report.report_id}.json"
-    body = render_markdown(report)
-    md_path.write_text(body, encoding="utf-8")
-    json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
-    artifacts = [str(md_path), str(json_path)]
+def make_github_pr_outbound(
+    *,
+    github_client: GitHubClient | None = None,
+    reports_dir: Path | None = None,
+):
+    def github_pr_outbound(state: PipelineState) -> dict[str, Any]:
+        """Outbound adapter: write the review to reports/, and post a PR comment via `GitHubClient`."""
+        report = state["findings_report"]
+        ctx = state.get("adapter_context") or {}
+        out_dir = reports_dir or REPORTS_DIR
+        out_dir.mkdir(parents=True, exist_ok=True)
+        md_path = out_dir / f"{report.report_id}.md"
+        json_path = out_dir / f"{report.report_id}.json"
+        body = render_markdown(report)
+        md_path.write_text(body, encoding="utf-8")
+        json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        artifacts = [str(md_path), str(json_path)]
 
-    decision = state.get("human_review")
-    human_approved = (
-        state.get("require_human_approval", False)
-        and decision is not None
-        and decision.action in ("approve", "filter")
-    )
-    posted, note = False, "Review saved locally; not posted to GitHub."
-    if ctx.get("post_to_github") and ctx.get("pr_number"):
-        if not human_approved:
-            note = "Not posted: posting needs require_human_approval=True and a human approval."
-        else:
-            try:
-                comment_url = _gh(
-                    "pr", "comment", str(ctx["pr_number"]), "--repo", ctx["repo"], "--body-file", str(md_path)
-                ).strip()
-                artifacts.append(comment_url)
-                posted, note = True, f"Posted review comment: {comment_url}"
-            except RuntimeError as e:  # fail loud, keep the local report
-                return {
-                    "deliverable_result": DeliverableResult(
-                        module_name="pr_review", status="failed", summary=f"Saved locally; posting failed: {e}",
-                        artifacts=artifacts,
-                    )
-                }
+        decision = state.get("human_review")
+        require_approval = bool(state.get("require_human_approval", False))
+        human_approved = decision is not None and decision.action in ("approve", "filter")
+        posted, note = False, "Review saved locally; not posted to GitHub."
+        if ctx.get("post_to_github") and ctx.get("pr_number"):
+            if require_approval and not human_approved:
+                note = "Not posted: require_human_approval=True requires a human approve or filter decision."
+            else:
+                client = github_client or GitHubCLIAdapter(gh_runner=_gh)
+                try:
+                    comment_url = client.comment_pr(str(ctx["repo"]), int(ctx["pr_number"]), md_path)
+                    artifacts.append(comment_url)
+                    posted, note = True, f"Posted review comment: {comment_url}"
+                except RuntimeError as e:  # fail loud, keep the local report
+                    return {
+                        "deliverable_result": DeliverableResult(
+                            module_name="pr_review",
+                            status="failed",
+                            summary=f"Saved locally; posting failed: {e}",
+                            artifacts=artifacts,
+                        )
+                    }
 
-    return {
-        "deliverable_result": DeliverableResult(
-            module_name="pr_review",
-            status="completed",
-            summary=f"{report.overall_verdict}: {len(report.findings)} finding(s) for {report.target_id}. {note}",
-            artifacts=artifacts,
-            metadata={"posted_to_github": posted, "severity_counts": report.severity_counts()},
-        )
-    }
+        return {
+            "deliverable_result": DeliverableResult(
+                module_name="pr_review",
+                status="completed",
+                summary=f"{report.overall_verdict}: {len(report.findings)} finding(s) for {report.target_id}. {note}",
+                artifacts=artifacts,
+                metadata={"posted_to_github": posted, "severity_counts": report.severity_counts()},
+            )
+        }
+
+    return github_pr_outbound
 
 
-def build_github_pr_review_module() -> ContextModule:
+github_pr_outbound = make_github_pr_outbound()
+
+
+def build_github_pr_review_module(
+    *,
+    github_client: GitHubClient | None = None,
+    reports_dir: Path | None = None,
+) -> ContextModule:
+    client = github_client or GitHubCLIAdapter(gh_runner=_gh)
     return ContextModule(
         name="pr_review",
-        description="GitHub PR (or raw diff) -> markdown/JSON review, optional human-approved PR comment",
-        inbound_node=github_pr_inbound,
-        outbound_node=github_pr_outbound,
+        description="GitHub PR (or raw diff) -> markdown/JSON review + PR comment via GitHubClient",
+        inbound_node=make_github_pr_inbound(github_client=client),
+        outbound_node=make_github_pr_outbound(github_client=client, reports_dir=reports_dir),
     )

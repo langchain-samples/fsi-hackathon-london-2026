@@ -192,19 +192,44 @@ class RunnerCliTests(unittest.TestCase):
         self.assertIsNone(defaults.mcp_url)
         self.assertIsNone(defaults.mcp_port)
         self.assertFalse(defaults.no_mcp)
+        self.assertFalse(defaults.no_github)
+        self.assertFalse(defaults.draft_pr)
+        self.assertFalse(defaults.require_approval)
+        self.assertFalse(defaults.synthetic_diff)
+
+        default_payload = runner._build_payload(defaults)
+        self.assertTrue(default_payload["raw_input"]["create_pr"])
+        self.assertFalse(default_payload["raw_input"]["draft_pr"])
 
         parsed = parser.parse_args(
             [
                 "--module",
                 "pr_review",
+                "--pr-url",
+                "https://github.com/acme/credit/pull/7",
                 "--mcp-port",
                 "8010",
                 "--no-mcp",
+                "--require-approval",
             ]
         )
         self.assertEqual(parsed.module, "pr_review")
         self.assertEqual(parsed.mcp_port, 8010)
         self.assertTrue(parsed.no_mcp)
+        self.assertTrue(parsed.require_approval)
+
+        pr_payload = runner._build_payload(parsed)
+        self.assertTrue(pr_payload["raw_input"]["post_to_github"])
+        self.assertTrue(pr_payload["require_human_approval"])
+
+        with self.assertRaises(ValueError):
+            runner._build_payload(parser.parse_args(["--module", "pr_review"]))
+
+        synthetic_payload = runner._build_payload(
+            parser.parse_args(["--module", "pr_review", "--synthetic-diff"])
+        )
+        self.assertFalse(synthetic_payload["raw_input"]["post_to_github"])
+        self.assertIn("diff", synthetic_payload["raw_input"])
 
 
 if __name__ == "__main__":
